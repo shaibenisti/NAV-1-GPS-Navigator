@@ -1,0 +1,112 @@
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&display=swap">
+<style>
+__LEAFLET_CSS__
+:root {
+  --bg: #F3F5F8; --panel: #FFFFFF; --ink: #16202C; --muted: #5B6878; --line: #DCE2EA;
+  --accent: #1E88E5; --walk: #1E88E5; --brisk: #F57C00; --stand: #8A96A6; --gap: #C62828; --start: #2E9E4F; --end: #D93A3A;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark;
+    --bg: #0E141B; --panel: #16202B; --ink: #E7EDF4; --muted: #9AA8B8; --line: #2A3644; --accent: #4BA3F0; }
+}
+:root[data-theme="dark"] { color-scheme: dark;
+  --bg: #0E141B; --panel: #16202B; --ink: #E7EDF4; --muted: #9AA8B8; --line: #2A3644; --accent: #4BA3F0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.4 "Barlow", system-ui, sans-serif; padding-inline: 16px;
+  display: flex; flex-direction: column; gap: 12px; padding-block: 14px; box-sizing: border-box; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+h1 { font: 600 22px/1.2 "Barlow Semi Condensed", "Barlow", sans-serif; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 14px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.stat b { display: block; font: 600 20px/1.2 "Barlow Semi Condensed", sans-serif; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.mapwrap { position: relative; flex: 1 1 auto; min-height: 360px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+#map { position: absolute; inset: 0; background: #DDE3EA; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { font: 500 14px "Barlow", sans-serif; border: 0; background: none; color: var(--ink); padding: 6px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 13px; }
+.legend i { display: inline-block; width: 18px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+.note { color: var(--muted); font-size: 13px; max-width: 70ch; margin: 0; }
+.leaflet-container { font: 13px "Barlow", sans-serif; }
+</style>
+
+<header>
+  <h1>__HEADING__</h1>
+  <div class="sub">__SUBTITLE__</div>
+</header>
+<section class="stats" aria-label="Trip summary">__STATS__</section>
+<div class="bar">
+  <div class="seg" role="group" aria-label="Background">
+    <button id="bg-map" aria-pressed="true">Map</button><button id="bg-sat" aria-pressed="false">Satellite</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--walk)"></i>Walking</span>
+    <span><i style="background:var(--brisk)"></i>Faster than 5 km/h</span>
+    <span><i style="background:var(--stand)"></i>Standing</span>
+    <span id="lg-gap" hidden><i style="background:repeating-linear-gradient(90deg,var(--gap) 0 5px,transparent 5px 9px)"></i>No GPS fix (straight line)</span>
+  </div>
+</div>
+<div class="mapwrap"><div id="map"></div></div>
+<p class="note">__NOTE__</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const PTS = __POINTS__;            // [lat, lon, seconds since first point]
+const TILES = __TILES__;           // "layer/z/x/y" -> data URI (downloaded for this route only)
+const css = getComputedStyle(document.documentElement);
+const col = n => css.getPropertyValue(n).trim();
+
+const Embedded = L.GridLayer.extend({
+  createTile(c) {
+    const img = document.createElement('img');
+    const src = TILES[this.options.layer + '/' + c.z + '/' + c.x + '/' + c.y];
+    if (src) img.src = src;
+    img.alt = '';
+    return img;
+  }
+});
+const opts = { minZoom: 15, maxZoom: 20, maxNativeZoom: 18, tileSize: 256 };
+const layers = {
+  map: new Embedded({ ...opts, layer: 'osm', attribution: '&copy; OpenStreetMap contributors' }),
+  sat: new Embedded({ ...opts, layer: 'sat', attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' })
+};
+const map = L.map('map', { zoomSnap: 0.5, minZoom: 15, maxZoom: 20 });
+let current = layers.map.addTo(map);
+
+function speedColor(kmh) { return kmh < 1.5 ? col('--stand') : kmh > 5 ? col('--brisk') : col('--walk'); }
+// NAV-1 saves a point at least every 10 s while it has a fix: a longer step = the fix was lost there.
+const GAP_S = 15;
+const all = [];
+for (let i = 1; i < PTS.length; i++) {
+  const a = PTS[i - 1], b = PTS[i];
+  const dt = Math.max(1, b[2] - a[2]);
+  const kmh = map.distance([a[0], a[1]], [b[0], b[1]]) / dt * 3.6;
+  if (dt > GAP_S) {
+    L.polyline([[a[0], a[1]], [b[0], b[1]]], { color: col('--gap'), weight: 4, opacity: .9, dashArray: '6 8' })
+      .bindTooltip('No GPS fix for ' + dt + ' s').addTo(map);
+    document.getElementById('lg-gap').hidden = false;
+  } else
+  L.polyline([[a[0], a[1]], [b[0], b[1]]], { color: speedColor(kmh), weight: 6, opacity: .95, lineCap: 'round' })
+    .bindTooltip(kmh.toFixed(1) + ' km/h').addTo(map);
+  all.push([a[0], a[1]]);
+}
+all.push([PTS[PTS.length - 1][0], PTS[PTS.length - 1][1]]);
+L.circleMarker(all[0], { radius: 8, color: '#fff', weight: 2, fillColor: col('--start'), fillOpacity: 1 }).bindTooltip('Start (first GPS fix)').addTo(map);
+L.circleMarker(all[all.length - 1], { radius: 8, color: '#fff', weight: 2, fillColor: col('--end'), fillOpacity: 1 }).bindTooltip('End').addTo(map);
+map.fitBounds(L.latLngBounds(all), { padding: [28, 28] });
+
+function pick(name) {
+  map.removeLayer(current);
+  current = layers[name].addTo(map);
+  document.getElementById('bg-map').setAttribute('aria-pressed', name === 'map');
+  document.getElementById('bg-sat').setAttribute('aria-pressed', name === 'sat');
+}
+document.getElementById('bg-map').addEventListener('click', () => pick('map'));
+document.getElementById('bg-sat').addEventListener('click', () => pick('sat'));
+</script>

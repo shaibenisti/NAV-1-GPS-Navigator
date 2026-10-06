@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><title>NAV-1 Map</title>
+<link rel="stylesheet" href="/map/leaflet.css">
+<style>
+:root{--bg:#10141c;--panel:#1b2130;--ink:#eee;--muted:#9ab;--line:#2a3244;--accent:#1e88e5;
+--walk:#1e88e5;--brisk:#f57c00;--stand:#8a96a6}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.35 -apple-system,system-ui,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));background:#1a2340}
+header a{color:#64b5f6;text-decoration:none;font-size:15px}
+header b{font-size:18px;flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:500 14px -apple-system,system-ui,sans-serif;border:0;background:var(--panel);color:var(--ink);padding:6px 12px}
+.seg button[aria-pressed=true]{background:var(--accent);color:#fff}
+#map{flex:1;background:#dde3ea}
+.bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:8px 12px;background:var(--panel);
+padding-bottom:max(8px,env(safe-area-inset-bottom))}
+select{font-size:15px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px;max-width:60vw}
+.stats{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--muted)}
+.stats b{color:var(--ink);font-size:15px}
+.legend{display:flex;gap:10px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.me{width:16px;height:16px;border-radius:50%;background:#1e88e5;border:3px solid #fff;box-shadow:0 0 0 2px rgba(30,136,229,.35)}
+.btn{font-size:14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.leaflet-control-attribution{font-size:10px}
+</style></head><body>
+<header><a href="/">&#8249; NAV-1</a><b>Map</b>
+<div class="seg"><button id="bg-map" aria-pressed="true">Map</button><button id="bg-sat" aria-pressed="false">Satellite</button></div>
+</header>
+<div id="map"></div>
+<div class="bar">
+<select id="trip"><option value="">Trips...</option></select>
+<button class="btn" id="me">Me</button>
+<div class="stats" id="stats"></div>
+<div class="legend"><span><i style="background:var(--walk)"></i>moving</span><span><i style="background:var(--brisk)"></i>&gt; 5 km/h</span><span><i style="background:var(--stand)"></i>standing</span></div>
+</div>
+<script src="/map/leaflet.js"></script>
+<script src="/map/pmleaflet.js"></script>
+<script src="/map/pmtiles.js"></script>
+<script>
+const map = L.map('map', {zoomControl: false, minZoom: 7, maxZoom: 18, maxBounds: [[28.9, 33.6], [33.9, 36.6]]})
+  .setView([31.8, 35.0], 8);
+L.control.zoom({position: 'topright'}).addTo(map);
+L.control.scale({imperial: false}).addTo(map);
+const street = protomapsL.leafletLayer({url: '/maps/israel.pmtiles', flavor: 'light', lang: 'he', maxDataZoom: 15,
+  attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>, Protomaps'});
+const sat = pmtiles.leafletRasterLayer(new pmtiles.PMTiles('/maps/israel-sat.pmtiles'), {maxNativeZoom: 14, maxZoom: 18,
+  attribution: 'Sentinel-2 cloudless 2024 by EOX (Copernicus Sentinel data 2024), CC BY-NC-SA 4.0'});
+let bg = street.addTo(map);
+function setBg(which) {
+  map.removeLayer(bg); bg = (which === 'sat' ? sat : street).addTo(map); bg.bringToBack();
+  document.getElementById('bg-map').setAttribute('aria-pressed', which !== 'sat');
+  document.getElementById('bg-sat').setAttribute('aria-pressed', which === 'sat');
+}
+document.getElementById('bg-map').onclick = () => setBg('map');
+document.getElementById('bg-sat').onclick = () => setBg('sat');
+
+// live position from NAV-1's GPS
+let me = null, follow = true, lastFix = null;
+async function loc() {
+  try {
+    const d = await (await fetch('/api/location', {cache: 'no-store'})).json();
+    if (d.lat == null) return;
+    lastFix = [d.lat, d.lon];
+    if (!me) me = L.marker(lastFix, {icon: L.divIcon({className: '', html: '<div class="me"></div>', iconSize: [22, 22]})}).addTo(map);
+    else me.setLatLng(lastFix);
+    if (follow) { map.setView(lastFix, Math.max(map.getZoom(), 15)); follow = false; }
+  } catch (e) {}
+}
+document.getElementById('me').onclick = () => { if (lastFix) map.setView(lastFix, Math.max(map.getZoom(), 16)); };
+loc(); setInterval(loc, 2000);
+
+// trips: the CSV has one row per saved position (t_s, utc, lat, lon, ele_m, speed_kmh, ...)
+let track = null, trips = [];
+const color = v => v < 0.8 ? getComputedStyle(document.body).getPropertyValue('--stand')
+  : v > 5 ? getComputedStyle(document.body).getPropertyValue('--brisk') : getComputedStyle(document.body).getPropertyValue('--walk');
+function fmtDur(s) { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+async function loadTrips() {
+  try {
+    trips = await (await fetch('/api/trips', {cache: 'no-store'})).json();
+    const sel = document.getElementById('trip');
+    sel.innerHTML = '<option value="">Trips (' + trips.length + ')</option>' +
+      trips.map((t, i) => '<option value="' + i + '">' + t.title + ' - ' + t.distance_km.toFixed(2) + ' km</option>').join('');
+  } catch (e) {}
+}
+async function showTrip(i) {
+  if (track) { map.removeLayer(track); track = null; }
+  document.getElementById('stats').innerHTML = '';
+  if (i === '') return;
+  const t = trips[+i];
+  const rows = (await (await fetch(t.csv)).text()).trim().split('\n').slice(1).map(r => r.split(','));
+  const pts = rows.map(r => ({t: +r[0], ll: [+r[2], +r[3]], v: +r[5]})).filter(p => p.ll[0]);
+  if (pts.length < 2) return;
+  track = L.layerGroup();
+  for (let k = 1; k < pts.length; k++)
+    L.polyline([pts[k - 1].ll, pts[k].ll], {color: color(pts[k].v), weight: 5, opacity: .95}).addTo(track);
+  L.circleMarker(pts[0].ll, {radius: 7, color: '#fff', weight: 2, fillColor: '#2e9e4f', fillOpacity: 1}).addTo(track);
+  L.circleMarker(pts[pts.length - 1].ll, {radius: 7, color: '#fff', weight: 2, fillColor: '#d93a3a', fillOpacity: 1}).addTo(track);
+  track.addTo(map);
+  map.fitBounds(L.latLngBounds(pts.map(p => p.ll)), {padding: [30, 30]});
+  follow = false;
+  document.getElementById('stats').innerHTML = '<span><b>' + t.distance_km.toFixed(2) + ' km</b></span><span><b>' +
+    fmtDur(t.duration_s) + '</b> time</span><span><b>' + Math.round(t.max_kmh) + '</b> km/h max</span>';
+}
+document.getElementById('trip').onchange = e => showTrip(e.target.value);
+loadTrips();
+</script>
+</body></html>

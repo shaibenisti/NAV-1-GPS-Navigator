@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAV-1 - install the firmware</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { --bg:#0f1420; --card:#171e2e; --fg:#e8ecf4; --mut:#9aa6bd; --acc:#8b6cf0; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 20px 64px; }
+  img.logo { height:84px; display:block; margin:0 auto 8px; }
+  h1 { text-align:center; margin:4px 0 4px; font-size:34px; }
+  p.sub { text-align:center; color:var(--mut); margin:0 0 28px; }
+  .card { background:var(--card); border-radius:14px; padding:22px; margin:18px 0; }
+  .center { text-align:center; }
+  esp-web-install-button button { background:var(--acc); color:#fff; border:0; border-radius:10px; padding:14px 26px; font-size:17px; cursor:pointer; }
+  img.hero { width:100%; border-radius:12px; display:block; }
+  ol { padding-left:20px; } li { margin:6px 0; }
+  a { color:#b9a6ff; } code { background:#0f1420; padding:2px 6px; border-radius:5px; }
+  .mut { color:var(--mut); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="images/nav1-logo.svg" alt="NAV-1">
+  <h1>NAV-1</h1>
+  <p class="sub">Pocket GPS navigator - install the firmware from your browser</p>
+
+  <div class="card center">
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install NAV-1 firmware</button>
+      <span slot="unsupported">This browser cannot flash over USB. Use Chrome or Edge on a computer, or flash from the command line (see the README).</span>
+      <span slot="not-allowed">Opening the page over HTTPS is required.</span>
+    </esp-web-install-button>
+    <p class="mut">Version 0.5.1 - ESP32-8048S043C-I board - about a minute</p>
+  </div>
+
+  <div class="card">
+    <ol>
+      <li>Connect the board to the computer with a USB-C <b>data</b> cable.</li>
+      <li>Click <b>Install NAV-1 firmware</b>, choose the serial port (<code>USB-SERIAL CH340</code>) and confirm.</li>
+      <li>Wait until it says the installation is complete; the device restarts by itself.</li>
+      <li>Insert a FAT32 microSD card, go outside and wait for the first GPS fix (a few minutes).</li>
+    </ol>
+    <p class="mut">Your Wi-Fi settings and the files on the SD card are not touched. If the board is not found, install the CH340 USB driver.</p>
+  </div>
+
+  <div class="card">
+    <img class="hero" src="images/os-overview.png" alt="NAV-1 screens">
+  </div>
+
+  <p class="center mut"><a href="https://github.com/shaibenisti/NAV-1-GPS-Navigator">Source code, build instructions and 3D-printable case on GitHub</a></p>
+</main>
+</body>
+</html>

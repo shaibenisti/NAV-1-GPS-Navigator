@@ -1,0 +1,3 @@
+# Keep files byte-identical between working tree and repository (LF everywhere),
+# so "git describe --dirty" in the firmware version is never triggered by line endings.
+* text=auto eol=lf

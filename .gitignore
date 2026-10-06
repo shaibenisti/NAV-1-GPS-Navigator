@@ -1,0 +1,51 @@
+# ---- build outputs ----
+build/
+*.bin
+*.elf
+*.map
+*.hex
+!tools/scripts/testdata/*.bin
+!docs/firmware/*.bin
+
+# ---- generated at build time by idf-build.ps1 ----
+firmware/build_info.h
+
+# ---- local tool / editor state ----
+.claude/settings.local.json
+.vscode/
+*.code-workspace
+
+# ---- OS noise ----
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- validation logs (tools/scripts/validate.ps1) ----
+tools/scripts/logs/
+
+# ---- firmware archives (validate.ps1 -Archive) ----
+archive/
+
+# ---- downloaded field tests (tools/scripts/fieldtest.ps1) ----
+tools/scripts/fieldtests/
+
+# ---- local secrets for validate.ps1 (Wi-Fi regression) ----
+tools/scripts/wifi.local.json
+
+# ---- screenshots (tools/scripts/shot.ps1) ----
+tools/scripts/shots/
+
+# ---- ESP-IDF build (idf\) ----
+idf/build/
+idf/managed_components/
+idf/sdkconfig
+idf/sdkconfig.old
+idf/*.log
+idf/build-exp/
+__pycache__/
+
+# ---- Claude Code local state ----
+.claude/
+
+# ---- local-only material (not part of the repository) ----
+GPS CASE/

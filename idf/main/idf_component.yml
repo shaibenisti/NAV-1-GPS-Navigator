@@ -1,0 +1,4 @@
+dependencies:
+  espressif/arduino-esp32: "3.3.10"
+  lvgl/lvgl: "9.6.0"
+  idf: "5.5.4"
