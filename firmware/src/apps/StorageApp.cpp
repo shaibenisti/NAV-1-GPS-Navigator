@@ -1,7 +1,7 @@
 // =============================================================================
 //  Storage app: what fills the SD card, and a clean-up for old GPS logs.
 //    - Capacity bar coloured by category + used / free
-//    - Categories: Trips, GPS logs, Field tests, System (settings, images), Other
+//    - Categories: Trips, GPS logs, System (settings, images), Other
 //    - Clean up: keep only the newest GPS log sessions (NAV-1 starts one at every
 //      start-up); asks first, deletes in the background
 //  Folder sizes are measured in the background (Storage::statStart) after the
@@ -15,10 +15,10 @@
 
 namespace {
 
-enum Cat { C_TRIPS, C_LOGS, C_FIELD, C_SYSTEM, C_OTHER, C_COUNT };
-const char *const CAT_NAME[C_COUNT] = { "Trips", "GPS logs", "Field tests", "System", "Other" };
-const uint32_t CAT_COLOR[C_COUNT] = { 0x43A047, 0x1E88E5, 0xE53935, 0xFB8C00, 0x8A96A6 };
-const char *const PATHS[] = { "/data/trips", "/GPSLOG", "/FIELD", "/system", "/assets" };   // system = /system + /assets
+enum Cat { C_TRIPS, C_LOGS, C_SYSTEM, C_OTHER, C_COUNT };
+const char *const CAT_NAME[C_COUNT] = { "Trips", "GPS logs", "System", "Other" };
+const uint32_t CAT_COLOR[C_COUNT] = { 0x43A047, 0x1E88E5, 0xFB8C00, 0x8A96A6 };
+const char *const PATHS[] = { "/data/trips", "/GPSLOG", "/system", "/assets" };   // system = /system + /assets
 constexpr int KEEP_SESSIONS = 20;
 constexpr int BAR_W = 436;
 
@@ -58,9 +58,9 @@ void measure() {
 void showSizes() {
   uint64_t total = 0, freeB = 0;
   const bool card = Storage::usage(total, freeB);
-  for (int i = 0; i < 3; i++) { s_bytes[i] = Storage::stat(i).bytes; s_files[i] = Storage::stat(i).files; }
-  s_bytes[C_SYSTEM] = Storage::stat(3).bytes + Storage::stat(4).bytes;
-  s_files[C_SYSTEM] = Storage::stat(3).files + Storage::stat(4).files;
+  for (int i = 0; i < 2; i++) { s_bytes[i] = Storage::stat(i).bytes; s_files[i] = Storage::stat(i).files; }
+  s_bytes[C_SYSTEM] = Storage::stat(2).bytes + Storage::stat(3).bytes;
+  s_files[C_SYSTEM] = Storage::stat(2).files + Storage::stat(3).files;
   const uint64_t used = card ? total - freeB : 0;
   uint64_t known = 0;
   for (int i = 0; i < C_OTHER; i++) known += s_bytes[i];
@@ -167,7 +167,7 @@ void create(lv_obj_t *content) {
   s_ui.freeText = label(top, &lv_font_montserrat_14, lv_color_hex(0xBBBBBB));
   lv_obj_set_pos(s_ui.freeText, 4, 78);
 
-  lv_obj_t *list = Apps::card(content, 12, 122, 456, 242);
+  lv_obj_t *list = Apps::card(content, 12, 122, 456, 200);
   for (int i = 0; i < C_COUNT; i++) {
     const int y = 6 + i * 44;
     lv_obj_t *dot = lv_obj_create(list);
@@ -185,7 +185,7 @@ void create(lv_obj_t *content) {
     lv_obj_align(s_ui.size[i], LV_ALIGN_TOP_RIGHT, -4, y);
   }
 
-  lv_obj_t *cl = Apps::card(content, 12, 376, 456, 190);
+  lv_obj_t *cl = Apps::card(content, 12, 334, 456, 190);
   lv_obj_t *ct = label(cl, &lv_font_montserrat_20, lv_color_white(), LV_SYMBOL_TRASH "  Clean up");
   lv_obj_set_pos(ct, 4, 4);
   s_ui.cleanInfo = label(cl, &lv_font_montserrat_14, lv_color_hex(0xDDDDDD));

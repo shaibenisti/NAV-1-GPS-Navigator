@@ -45,7 +45,7 @@ Ready-made firmware is in [`docs/firmware`](docs/firmware). Connect the board wi
 | **In the browser** (Chrome / Edge) | Open the **web flasher**: <https://shaibenisti.github.io/NAV-1-GPS-Navigator/> and press *Install*. |
 | **PowerShell** (Windows) | `.\flash.ps1` — finds the board, installs `esptool` if needed, flashes in about 30 seconds. |
 | **Terminal** (macOS / Linux) | `./flash.sh` |
-| **Any tool** | Write [`docs/firmware/NAV1-v0.5.1-full.bin`](docs/firmware/NAV1-v0.5.1-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
+| **Any tool** | Write [`docs/firmware/NAV1-v0.5.2-full.bin`](docs/firmware/NAV1-v0.5.2-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
 
 Then insert a **FAT32 microSD card** and, if you want the street map, put it on the card:
 
