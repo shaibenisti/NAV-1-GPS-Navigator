@@ -4,7 +4,7 @@
   Output: 12-byte LVGL header + pixels. RGB565 (opaque) or RGB565A8 (with transparency,
   chosen automatically when the picture has any). Copy the result to the SD card:
     icons       /assets/icons/<App name>.bin      (<= 128 x 128, e.g. GPS.bin, Trips.bin)
-    wallpaper   /assets/wallpapers/home.bin       (<= 800 x 480, centered)
+    wallpaper   /assets/wallpapers/home.bin       (<= 480 x 800 portrait, centered)
   With a card reader, or over the console: .\tools\scripts\sdput.ps1 <file> <path>
 
   Examples:

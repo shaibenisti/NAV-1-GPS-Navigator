@@ -1,6 +1,6 @@
 // =============================================================================
 //  Tools app: development diagnostics only (the same data as the serial console).
-//  Product information lives in the normal apps (GPS, Settings). Menu on the left,
+//  Product information lives in the normal apps (GPS, Settings). Tab strip on top,
 //  one page per tool (same layout as Settings, Apps::buildMenu):
 //    Health     - one plain status line per part of the device (Diag::healthRows), every 2 s;
 //                 the full technical report stays on the console ("diag")

@@ -1,7 +1,7 @@
 // =============================================================================
 //  GpsReplay  -  developer tool: replay a recorded NMEA session from the SD card
 //  (/GPSLOG/Snnnn.NMEA) into the GPS parser, so GPS-dependent features (GPS app,
-//  Trips, field test) can be exercised indoors and in automated validation.
+//  Trips, Map, Compass) can be exercised indoors and in automated validation.
 // -----------------------------------------------------------------------------
 //  Console: "gps replay <path> [speed]" (speed 1..20, x real time), "gps live".
 //  While replaying, the live receiver is detached from the parser, the link counts

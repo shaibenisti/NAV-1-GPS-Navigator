@@ -5,7 +5,6 @@
 #include <mbedtls/base64.h>
 #include <soc/gdma_struct.h>
 #include "Health.h"
-#include "FieldRecorder.h"
 #include "GpsReplay.h"
 #include "../services/TripRecorder.h"
 #include "../GpsLink.h"
@@ -615,7 +614,7 @@ bool Diag::command(const char *line, Print &o) {
     o.println("[HELP] ble on|off   |  UI: open <app>  page <App> <n>  files <folder>  home  |  probes: flash  swipe  bench  races  pulse 0|1");
     o.println("[HELP] backlight [10..100] | backlight dim <seconds, 0 = never> | backlight wake");
     o.println("[HELP] trip start|stop|status|list   gps replay <file.NMEA> [speed] | gps live (replay a recorded session) | gps profile [factory|galileo] | gps ubxtest | gps ubx");
-    o.println("[HELP] ft start [minutes]|stop|status|list (field test)   sd ls [dir] | sd cat <path> | sd dir [dir] | sd df | sd rm <path> | sd put <path> <size> (sdput.ps1)");
+    o.println("[HELP] sd ls [dir] | sd cat <path> | sd dir [dir] | sd df | sd rm <path> | sd put <path> <size> (sdput.ps1)");
     o.println("[HELP] ota arm|disarm|status|reject   (firmware update over Wi-Fi: tools/scripts/ota.ps1)");
     return true;
   }
@@ -721,26 +720,6 @@ bool Diag::command(const char *line, Print &o) {
     } else {
       print(o, "gps");
       GpsReplay::status(o);
-    }
-    return true;
-  }
-  if (cmd == "ft") {                   // field test
-    const String sub = nextArg(p);
-    if (sub == "start") {
-      String err;
-      const uint32_t minutes = nextArg(p).toInt();   // optional planned duration, 0 = until "ft stop"
-      if (FieldRecorder::start(minutes * 60, &err))
-        o.printf("[FT] started %s%s\n", FieldRecorder::id().c_str(), minutes ? (", " + String(minutes) + " min").c_str() : "");
-      else o.printf("[FT] cannot start: %s\n", err.c_str());
-    } else if (sub == "stop") {
-      const String id = FieldRecorder::id();
-      FieldRecorder::stop();
-      o.printf("[FT] stopped %s\n", id.c_str());
-    } else if (sub == "list") {
-      s_sd->list("/FIELD", o);
-      o.println("[FT] list end");
-    } else {
-      FieldRecorder::status(o);
     }
     return true;
   }

@@ -1,6 +1,5 @@
 // =============================================================================
 //  NAV1.ino  -  Main firmware, ESP32-8048S043C-I + NEO-8M
-//  Mode (config.h APP_MODE): NAV-1 shell (default), or stage 2B field test.
 //  Docs: docs/ARCHITECTURE.md
 // -----------------------------------------------------------------------------
 //  This file only wires modules together. Pins/settings live in config.h;
@@ -12,18 +11,11 @@
 #include "src/GpsLink.h"
 #include "src/GpsParser.h"
 #include "src/GpsParserSelfTest.h"
-#if APP_MODE == APP_MODE_FIELD_TEST
-#include "src/fieldtest/FieldTest.h"      // stage 2B diagnostic mode
-#elif APP_MODE == APP_MODE_SHELL
 #include "src/shell/Shell.h"            // NAV-1 shell: launcher, status bar, apps, services
 #include "src/diag/Diag.h"
-#endif
 
 GpsLink   gpsLink;
 GpsParser gpsParser(GPS_FIX_MAX_AGE_MS);
-#if APP_MODE == APP_MODE_FIELD_TEST
-FieldTest fieldTest;
-#endif
 
 static void printStatus() {
   const GpsLink::Stats &s = gpsLink.stats();
@@ -68,25 +60,15 @@ void setup() {
   Serial.printf("GPS: UART1 RX=GPIO%d @ %d baud, raw echo %s\n",
                 GPS_RX_PIN, GPS_BAUD, GPS_ECHO_RAW ? "ON" : "OFF");
 
-#if APP_MODE == APP_MODE_FIELD_TEST
-  fieldTest.begin(gpsLink, gpsParser, selfTestOk);   // display + SD; takes over raw echo
-#elif APP_MODE == APP_MODE_SHELL
   Shell::begin(gpsLink, gpsParser, selfTestOk);     // LVGL + touch + SD + radios; takes over raw echo
-#endif
 }
 
 void loop() {
   gpsLink.update();
-#if APP_MODE == APP_MODE_FIELD_TEST
-  fieldTest.update();
-#elif APP_MODE == APP_MODE_SHELL
   Shell::update();
-#endif
 
   static uint32_t lastStatus = 0;
-#if APP_MODE == APP_MODE_SHELL
   if (!Diag::reportsOn()) return;                    // quiet console; "report on" enables it
-#endif
   if (millis() - lastStatus >= STATUS_INTERVAL_MS) {
     lastStatus = millis();
     printStatus();

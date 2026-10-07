@@ -1,5 +1,5 @@
 // =============================================================================
-//  Settings app: a menu on the left, one page per topic on the right, in the
+//  Settings app: a tab strip on top, one page per topic below it, in the
 //  order people know from a phone:
 //    Wi-Fi         on/off, status, scan, connect, forget
 //    Bluetooth     on/off, visibility

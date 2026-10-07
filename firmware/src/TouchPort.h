@@ -23,7 +23,7 @@
 namespace TouchPort {
 
   struct Event {
-    int16_t x, y;                // screen coordinates (800 x 480)
+    int16_t x, y;                // panel coordinates (800 x 480; LvglPort rotates them for portrait)
     bool pressed;
     uint32_t us;                 // micros() of the GT911 report
   };

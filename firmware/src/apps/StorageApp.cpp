@@ -121,7 +121,7 @@ void onClean(lv_event_t *e) {
   lv_obj_t *t = label(ov, &lv_font_montserrat_28, lv_color_white(), "Delete old GPS logs?");
   lv_obj_set_pos(t, 24, 52);
   lv_obj_t *d = label(ov, &lv_font_montserrat_20, lv_color_hex(0xDDDDDD), "");
-  lv_label_set_text_fmt(d, "Keeps the newest %d sessions and deletes the other %u.\nTrips and field tests are not touched. "
+  lv_label_set_text_fmt(d, "Keeps the newest %d sessions and deletes the other %u.\nTrips are not touched. "
                            "This cannot be undone.", KEEP_SESSIONS, sessions > KEEP_SESSIONS ? sessions - KEEP_SESSIONS : 0);
   lv_obj_set_pos(d, 24, 104);
   lv_obj_set_width(d, 432);

@@ -16,7 +16,6 @@
 #include "../services/BleService.h"
 #include "../diag/Diag.h"
 #include "../diag/Health.h"
-#include "../diag/FieldRecorder.h"
 #include "../diag/GpsReplay.h"
 #include "../services/TripRecorder.h"
 #include "../services/WebService.h"
@@ -584,7 +583,7 @@ void handleConsole() {
 #define TIMED(name, call) do { const uint32_t t_ = micros(); call; Health::notePart(name, micros() - t_); } while (0)
 
 void updateServices() {
-  if (millis() - s_lastLogMs >= FIELD_LOG_MS && s_sd.logging()) {
+  if (millis() - s_lastLogMs >= GPS_LOG_MS && s_sd.logging()) {
     s_lastLogMs = millis();
     char row[256];
     const GpsData d = s_parser->snapshot(s_link->linkUp(GPS_LINK_TIMEOUT_MS));
@@ -595,7 +594,6 @@ void updateServices() {
   TIMED("gpscfg", GpsConfig::update());
   TIMED("wifi", WifiService::update());
   TIMED("time", TimeService::update());
-  TIMED("fieldtest", FieldRecorder::update());
   TIMED("replay", GpsReplay::update());
   TIMED("trip", TripRecorder::update());
   TIMED("web", WebService::update());
@@ -687,7 +685,6 @@ void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {
   ph[5] = millis();
   Diag::begin(link, parser, s_sd, parserSelfTestOk, diagPump);
   Diag::setStatusIconsLabel(s_sbIcons);   // self-test: the Wi-Fi icon must be on screen when connected
-  FieldRecorder::begin(s_sd);             // resumes a field test interrupted by a reset
   GpsReplay::begin(s_sd, link, parser);
   TripRecorder::begin(s_sd);              // resumes a trip interrupted by a reset
   WebService::begin(s_sd);                // starts serving once Wi-Fi is connected

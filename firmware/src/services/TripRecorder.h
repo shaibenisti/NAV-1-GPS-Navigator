@@ -7,7 +7,7 @@
 //    .csv   t_s,utc,lat,lon,ele_m,speed_kmh,course_deg,sats,hdop
 //    .json  summary written on stop (the Trips list reads it)
 //  Points: only with a GPS fix; a new point when moved >= 3 m or every 10 s.
-//  A recording survives a reset (resumed from NVS, like the field test).
+//  A recording survives a reset (resumed from NVS).
 //  Writes go through the SdLog writer task. Never draws.
 // =============================================================================
 #pragma once

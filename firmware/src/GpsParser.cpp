@@ -129,7 +129,7 @@ int GpsParser::satellites(GpsSat *out, int max) const {
 }
 
 // A fix needs all three: a parsed position, the receiver's own RMC "A" (active)
-// flag, and a fresh update. Field test 2026-09-27: the NEO-8M sends RMC "V" the
+// flag, and a fresh update. Measured outdoors: the NEO-8M sends RMC "V" the
 // moment it loses the fix, while the last position stays "valid" in TinyGPSPlus;
 // age-only logic kept a stale fix for 4 s. Normal position age is 0.7-0.8 s.
 bool GpsParser::positionIsFix() {

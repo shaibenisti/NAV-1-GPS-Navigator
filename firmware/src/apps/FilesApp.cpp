@@ -6,7 +6,7 @@
 //  - Newest first (folders by name first), in pages of ROWS: the row objects are
 //    created once and only relabelled (100 new rows took ~0.6 s for /GPSLOG).
 //  - Delete asks first and runs in the background (Storage); files being written
-//    (GPS session, recording trip, field test) cannot be deleted.
+//    (GPS session, recording trip) cannot be deleted.
 // =============================================================================
 #include "../Display.h"
 #include "App.h"

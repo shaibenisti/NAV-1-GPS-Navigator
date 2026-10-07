@@ -8,13 +8,7 @@
 
 #include "version.h"                   // FW_VERSION, FW_GIT_DESCRIBE
 
-#define APP_NAME            "NAV-1"              // product name (UI, BLE/mDNS name, logs); firmware folder stays firmware
-
-// ---- Firmware mode ------------------------------------------------------------
-#define APP_MODE_FIELD_TEST 0           // stage 2B diagnostic screen + SD log (src/fieldtest/)
-#define APP_MODE_SHELL      1           // NAV-1 shell: launcher + apps + services (src/shell/)
-#define APP_MODE            APP_MODE_SHELL
-#define FIELD_TEST          (APP_MODE == APP_MODE_FIELD_TEST)
+#define APP_NAME            "NAV-1"              // product name (UI, BLE/mDNS name, logs); firmware sources live in firmware/
 
 // ---- Serial console (UART0 -> CH340) : VERIFIED -----------------------------
 #define CONSOLE_BAUD        115200
@@ -33,7 +27,7 @@
 #define GPS_LINK_TIMEOUT_MS 2000        // no byte for this long -> link DOWN
 #define GPS_FIX_MAX_AGE_MS  2000        // position older than this -> NO FIX (normal age 0.7-0.8 s)
 
-// ---- Display (RGB 800x480) : VERIFIED June 2026 ----------------------------
+// ---- Display (RGB panel 800x480, used in portrait) ----------------------------
 //  Control pins + clock here; the 16 RGB data pins are fixed in src/Display.cpp.
 #define LCD_BL_PIN          2           // backlight, active HIGH
 #define LCD_DE_PIN          40
@@ -94,13 +88,12 @@
 #define LCD_PORTRAIT        1           // 1: UI is 480 x 800 portrait (top = the panel's x = 799 edge, next to the GPS antenna). LVGL renders
                                         //    PARTIAL portrait strips; the flush rotates them into the panel's own 800 x 480 framebuffers
 #define LCD_OWN_FLIP        1           // page flip by retargeting fb0's DMA descriptors (esp_lcd's fb1 switch is broken, 2026-09-29); 0 = esp_lcd
-#define LVGL_PARTIAL_LINES  16          // partial buffer height (800 x 40 x 2 B = 64 KB)
+#define LVGL_PARTIAL_LINES  16          // partial buffer height in rows (480 x 16 x 2 B = 15 KB internal RAM)
 #define HOME_BG_GRADIENT    1           // home background: vertical gradient (1) or solid (0) (M1 cost probe)
 #define HOME_TILE_STYLE     2           // home tiles: 0 flat square, 1 rounded, 2 rounded + gradient (M1 cost probe)
 
-// ---- Stage 2B field test (see src/fieldtest/) -------------------------------
-#define FIELD_SCREEN_MS     500         // screen refresh period
-#define FIELD_LOG_MS        1000        // one CSV row per second
+// ---- GPS session log ---------------------------------------------------------
+#define GPS_LOG_MS          1000        // one CSV row per second in the session file
 
 // ---- Console diagnostics ----------------------------------------------------
 #define GPS_PARSER_SELFTEST 1           // 1 = run GpsParser self-test at boot (~5 ms)

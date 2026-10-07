@@ -174,14 +174,6 @@ String Settings::hotspotPass() {
 bool Settings::bleEnabled() { return s_prefs.getBool("ble_on", true); }
 void Settings::setBleEnabled(bool on) { s_prefs.putBool("ble_on", on); markDirty(); }
 
-String Settings::fieldTestId() { return s_prefs.getString("ft_id", ""); }
-void Settings::setFieldTestId(const String &id) { s_prefs.putString("ft_id", id); }
-uint32_t Settings::fieldTestElapsedS() { return s_prefs.getUInt("ft_elapsed", 0); }
-void Settings::setFieldTestElapsedS(uint32_t s) { s_prefs.putUInt("ft_elapsed", s); }
-uint32_t Settings::fieldTestTargetS() { return s_prefs.getUInt("ft_target", 0); }
-void Settings::setFieldTestTargetS(uint32_t s) { s_prefs.putUInt("ft_target", s); }
-uint32_t Settings::fieldTestResets() { return s_prefs.getUInt("ft_resets", 0); }
-void Settings::setFieldTestResets(uint32_t n) { s_prefs.putUInt("ft_resets", n); }
 
 bool Settings::lastPos(double &lat, double &lon) {
   if (!s_prefs.isKey("pos_lat")) return false;

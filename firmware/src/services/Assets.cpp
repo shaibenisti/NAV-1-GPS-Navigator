@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include "../Display.h"
 #include "../SdLog.h"
 
 // imgconv.ps1 writes these values: keep both sides in sync.
@@ -80,7 +81,7 @@ void Assets::begin(SdLog &sd, const char *const *appNames, int appCount) {
       s_hasIcon[i] = load(sd, path, ICON_MAX, ICON_MAX, s_icons[i]);
     }
   }
-  if (sd.listDir("/assets/wallpapers", e, 24) > 0) s_hasWall = load(sd, "/assets/wallpapers/home.bin", 800, 480, s_wall);
+  if (sd.listDir("/assets/wallpapers", e, 24) > 0) s_hasWall = load(sd, "/assets/wallpapers/home.bin", Display::UI_W, Display::UI_H, s_wall);
   if (s_loaded || s_rejected)
     Serial.printf("[ASSET] %d loaded, %d ignored (%u ms)\n", s_loaded, s_rejected, (unsigned)(millis() - t0));
 }

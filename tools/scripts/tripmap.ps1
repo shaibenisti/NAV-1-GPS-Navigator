@@ -12,7 +12,7 @@ param(
   [switch]$NoOpen
 )
 . "$PSScriptRoot\NavSerial.ps1"
-$outDir = Join-Path $PSScriptRoot "fieldtests\maps"
+$outDir = Join-Path $PSScriptRoot "output\maps"
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
 if (-not $Gpx) {                                   # newest trip from the device

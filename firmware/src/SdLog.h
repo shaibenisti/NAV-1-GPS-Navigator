@@ -36,7 +36,7 @@ public:
   // (card stalled for many seconds) is dropped and counted.
   bool startWriter(uint32_t flushMs, int core, int priority);
 
-  // --- auxiliary files (e.g. field-test recordings), up to AUX_FILES open ---
+  // --- auxiliary files (e.g. the trip files), up to AUX_FILES open ---
   // Writer mode: open, lines and close are all queued and done by the writer task, in order,
   // so none of them blocks the caller (creating a file takes ~300 ms on the 256 GB card);
   // otherwise done directly. auxFailed() reports an open that failed in the writer.

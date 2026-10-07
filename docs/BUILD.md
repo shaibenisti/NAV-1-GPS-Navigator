@@ -76,7 +76,6 @@ It opens every app several times and checks for memory leaks, runs the on-device
 | `maps.ps1`, `mapload.ps1`, `maps_sat_fetch.py` | Build the offline maps and put them on the card; load-test the map server |
 | `mvtlib.py`, `maprender.py` | Readable Python version of the map renderer (`python maprender.py <lon> <lat> out.png`, needs a `.pmtiles`; set `NAV1_PMTILES`) |
 | `tripmap.ps1`, `tripmap-standalone.ps1` | Draw a trip on OpenStreetMap, locally or as one self-contained HTML page |
-| `fieldtest.ps1` | Download and analyse the optional field-test recordings (`ft` console command) |
 | `imgconv.ps1`, `sdput.ps1` | Convert images for `/assets`; copy a small file to the card over the console |
 | `cardcheck.py`, `cardfill.py`, `cardverify.py` | Detect counterfeit / failing SD cards |
 | `stress.ps1` | UI stress and reboot soak |

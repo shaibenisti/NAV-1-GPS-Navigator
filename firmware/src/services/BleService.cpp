@@ -143,7 +143,7 @@ void handleCommand(const char *cmd) {
 // ~720 B of it; an interrupt that fires as the heap lock is released saves ~300 B more ->
 // "Stack canary watchpoint triggered (ipc0)" / heap corruption on ~2 % of boots (2026-09-29,
 // backtrace ... multi_heap_malloc <- esp_intr_alloc <- btdm_intr_alloc <- ipc_task).
-// build.ps1 links with -Wl,--wrap=esp_ipc_call_blocking; while BLE initialises, the call runs
+// idf/main/CMakeLists.txt links with -Wl,--wrap=esp_ipc_call_blocking; while BLE initialises, the call runs
 // in a short-lived task with a 4 KB stack on the requested core instead (same semantics:
 // another task on that core, the caller blocks until it returns). Other IPC calls are untouched.
 extern "C" esp_err_t __real_esp_ipc_call_blocking(uint32_t cpu_id, esp_ipc_func_t func, void *arg);

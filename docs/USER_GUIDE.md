@@ -20,6 +20,7 @@ The screen is used in portrait. Swipe left / right on the home screen for the se
 | **Files** | Browse the SD card, view text files, delete files and folders. |
 | **Storage** | What uses the card (trips, GPS logs, system files) and a clean-up that keeps the newest GPS logs. |
 | **Settings** | *Wi-Fi* (scan, pick a network, on-screen keyboard), *Bluetooth*, *Hotspot*, *Display* (brightness, dim after N seconds), *Date & Time* (time zone), *About*. |
+| **Alerts, Notes, Messages** | Placeholder tiles on page 2 ("Coming soon"). |
 | **Tools** | *Health* (status of every subsystem at a glance), *Touch test*, *Update* (firmware update over Wi-Fi). |
 
 ## Recording a trip
@@ -60,7 +61,7 @@ The street map comes from a Protomaps basemap build (OpenStreetMap data, zoom 0�
   "bluetooth": true, "brightness": 100, "dim_after_s": 0 }
 ```
 
-(Wi-Fi passwords are never stored in this file.) Optional images: `/assets/icons/<App name>.bin` replaces a home-screen icon and `/assets/wallpapers/home.bin` the background — convert PNG/JPG with `tools/scripts/imgconv.ps1`. Without them the built-in look is used.
+(Wi-Fi passwords are never stored in this file.) Optional images: `/assets/icons/<App name>.bin` replaces a home-screen icon and `/assets/wallpapers/home.bin` the background (up to 480 × 800, portrait) — convert PNG/JPG with `tools/scripts/imgconv.ps1`. Without them the built-in look is used.
 
 ## Updating the firmware
 

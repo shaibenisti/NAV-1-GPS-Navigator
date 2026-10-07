@@ -2,7 +2,7 @@
 //  Assets  -  optional images from the SD card.
 // -----------------------------------------------------------------------------
 //  /assets/icons/<App name>.bin      home tile icon, up to 128 x 128
-//  /assets/wallpapers/home.bin       home background, up to 800 x 480 (centered)
+//  /assets/wallpapers/home.bin       home background, up to 480 x 800 (portrait, centered)
 //  Files are LVGL 9 binary images (12-byte header + pixels), RGB565 / RGB565A8
 //  (with alpha) / ARGB8888, made on the PC with tools/scripts/imgconv.ps1.
 //  Loaded once after the card is mounted into PSRAM. A missing, invalid or

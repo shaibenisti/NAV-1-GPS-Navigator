@@ -36,6 +36,8 @@ the enclosure — is in this repository.
 
 All screens: **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
+**Status:** version 0.5.2 is in daily use. Three tiles on the second home page (Alerts, Notes, Messages) are placeholders that say "Coming soon". Ideas that fit the hardware and are not built yet: speed and signal alerts, notes with the on-screen keyboard, trip statistics, a satellite layer on the device's own map, a quick portrait / landscape switch.
+
 ## Install it (no build tools needed)
 
 Ready-made firmware is in [`docs/firmware`](docs/firmware). Connect the board with a USB-C data cable, then pick one:

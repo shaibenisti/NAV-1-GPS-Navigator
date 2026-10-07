@@ -15,7 +15,7 @@ bool SdLog::begin(const Pins &pins, uint32_t spiHz, int maxAttempts) {
   _pins = pins;
   for (_attempts = 1; _attempts <= maxAttempts; _attempts++) {
     SPI.begin(_pins.sck, _pins.miso, _pins.mosi, _pins.cs);
-    // 10 open files: session CSV+NMEA, field test (2), trip (2), summaries, replay, list/dump.
+    // 10 open files: session CSV+NMEA, trip (2), summaries, replay, list/dump.
     // The default 5 ran out with a trip + replay + the Trips list (2026-09-28).
     if (SD.begin(_pins.cs, SPI, spiHz, "/sd", 10) && SD.cardType() != CARD_NONE) {
       _mounted = true;
@@ -361,7 +361,7 @@ bool SdLog::auxLine(int slot, const char *text) {
   if (slot < 0 || slot >= AUX_FILES) return false;
   const size_t n = strlen(text);
   if (n > 500) { _dropped += n; return false; }
-  if (!_writer) {                                // direct mode (field-test firmware mode)
+  if (!_writer) {                                // direct mode (no writer task)
     lockCard();
     const bool ok = _aux[slot] && _aux[slot].print(text) == n && _aux[slot].print("\r\n") == 2;
     unlockCard();
@@ -449,7 +449,7 @@ void SdLog::unlockCard() {
 bool SdLog::startWriter(uint32_t flushMs, int core, int priority) {
   if (!logging() || _writer) return false;
   constexpr size_t CSV_BUF = 8 * 1024, NMEA_BUF = 16 * 1024;   // NMEA ~1 KB/s: 16 s of card stall
-  constexpr size_t AUX_BUF = 16 * 1024;                         // field test ~0.3 KB/s
+  constexpr size_t AUX_BUF = 16 * 1024;                         // trip points ~0.3 KB/s
   const size_t bytes = (CSV_BUF + 1) + (NMEA_BUF + 1) + (AUX_BUF + 1);   // static stream buffers need size + 1
   uint8_t *mem = (uint8_t *)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!mem) mem = (uint8_t *)malloc(bytes);

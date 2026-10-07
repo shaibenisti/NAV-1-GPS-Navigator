@@ -1,5 +1,5 @@
 // =============================================================================
-//  Trips app. Menu on the left, one page per topic (same layout
+//  Trips app. Tab strip on top, one page per topic (same layout
 //  as Settings / Tools / GPS):
 //    Record  Start / Stop, state, live values of the running trip
 //    Trips   recorded trips, newest first; tap one for its numbers and route shape

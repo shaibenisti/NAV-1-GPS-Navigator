@@ -40,15 +40,6 @@ namespace Settings {
 
   String deviceName();                 // default "NAV-1-xxxx" (last MAC bytes)
 
-  String fieldTestId();                // running field test ("" = none); survives resets
-  void setFieldTestId(const String &id);
-  uint32_t fieldTestElapsedS();        // saved every 30 s so a resumed test keeps its duration
-  void setFieldTestElapsedS(uint32_t s);
-  uint32_t fieldTestTargetS();         // planned field-test duration (0 = open-ended)
-  void setFieldTestTargetS(uint32_t s);
-  uint32_t fieldTestResets();
-  void setFieldTestResets(uint32_t n);
-
   String tripPath();                   // recording trip: base path without extension ("" = none)
   void setTripPath(const String &path);
   String tripStats();                  // "dur,moving,dist_m,max_kmh,points" saved every 30 s

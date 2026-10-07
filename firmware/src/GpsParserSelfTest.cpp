@@ -81,7 +81,7 @@ bool runGpsParserSelfTest() {
     check("bad checksum: counted, no fix", d.parserChecksumFail == 1 && !d.fix);
   }
 
-  // --- 4. Fix loss: the receiver's real loss sequence (field test S0005, t=714.9 s) ---
+  // --- 4. Fix loss: the receiver's real loss sequence (a recorded session) ---
   {
     GpsParser p(2000);
     feedBody(p, "GNRMC,123519.00,A,4807.03800,N,01131.00000,E,0.5,56.0,270926,,,A");
