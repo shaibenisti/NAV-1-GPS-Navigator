@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "MapFont.h"
 #include "MapTiles.h"
 
 namespace {
@@ -41,13 +42,19 @@ constexpr float ZMIN = 13.0f, ZMAX = 17.5f;
 inline int tzFor(float zoom) { return zoom >= TZ_MAX ? TZ_MAX : (int)floorf(zoom); }   // tile zoom for a view zoom
 bool s_wantBuildings = true;               // below zoom 15 buildings are not drawn (nor indexed)
 
-struct Feat { uint32_t geom, glen; uint8_t type, kind; };
-struct LayerIdx { Feat *f = nullptr; uint32_t n = 0; };
+struct Feat { uint32_t geom, glen, tagOff; uint16_t tagLen; uint8_t type, kind; };
+struct LayerIdx {
+  Feat *f = nullptr;
+  uint32_t n = 0;
+  uint32_t *vals = nullptr;                 // (offset, length) of every value message: names are looked up when labels are drawn
+  uint32_t nVals = 0;
+  int keyHe = -1, keyName = -1, keyEn = -1;
+};
 struct Tile {
   MapTiles::Buf buf;
   int tx = 0, ty = 0;
   uint32_t extent = 4096;
-  LayerIdx earth, landuse, landcover, water, buildings, roads;
+  LayerIdx earth, landuse, landcover, water, buildings, roads, places;
 };
 struct Edge { float y0, y1, x, k; };
 
@@ -58,7 +65,7 @@ MapRender::Req s_readyReq;
 MapRender::Req s_want;
 volatile bool s_haveWant = false, s_busy = false, s_run = false, s_taskDone = true, s_mapOk = false;
 const char *s_err = "";
-uint32_t s_lastMs = 0, s_lastTiles = 0, s_frames = 0, s_seq = 0;
+uint32_t s_lastMs = 0, s_lastTiles = 0, s_frames = 0, s_seq = 0, s_labelMs = 0, s_labels = 0;
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t s_task = nullptr;
 char s_path[48] = "";
@@ -129,12 +136,17 @@ uint8_t landKind(const uint8_t *s, size_t n) {
   return L_NONE;
 }
 uint8_t waterKind(const uint8_t *s, size_t n) { return strEq(s, n, "swimming_pool") ? 1 : 0; }
+uint8_t placeKind(const uint8_t *s, size_t n) {
+  if (strEq(s, n, "locality")) return 1;
+  if (strEq(s, n, "neighbourhood") || strEq(s, n, "suburb") || strEq(s, n, "quarter")) return 2;
+  return 0;
+}
 
 // ---- tile indexing ---------------------------------------------------------------------------------
 // One layer message -> Feat array; `kindFn` turns the feature's "kind" string into Feat::kind.
-void indexLayer(const uint8_t *b, size_t start, size_t end, LayerIdx &out, uint8_t (*kindFn)(const uint8_t *, size_t)) {
+void indexLayer(const uint8_t *b, size_t start, size_t end, LayerIdx &out, uint8_t (*kindFn)(const uint8_t *, size_t), bool names = false) {
   size_t i = start;
-  int nKeys = 0, kindKey = -1;
+  int nKeys = 0, kindKey = -1, heKey = -1, nameKey = -1, enKey = -1;
   uint32_t nFeat = 0, nVal = 0;
   while (i < end) {                                   // pass 1: keys, value + feature offsets
     const uint64_t k = rdVar(b, i, end);
@@ -142,7 +154,13 @@ void indexLayer(const uint8_t *b, size_t start, size_t end, LayerIdx &out, uint8
     if (w != 2) { if (!skipField(b, i, end, w)) return; continue; }
     const size_t l = rdVar(b, i, end);
     if (i + l > end) return;
-    if (f == 3) { if (strEq(b + i, l, "kind")) kindKey = nKeys; nKeys++; }
+    if (f == 3) {
+      if (strEq(b + i, l, "kind")) kindKey = nKeys;
+      else if (names && strEq(b + i, l, "name:he")) heKey = nKeys;
+      else if (names && strEq(b + i, l, "name")) nameKey = nKeys;
+      else if (names && strEq(b + i, l, "name:en")) enKey = nKeys;
+      nKeys++;
+    }
     else if (f == 4) { if (nVal < (uint32_t)MAX_TMP) { s_tmpVal[2 * nVal] = (uint32_t)i; s_tmpVal[2 * nVal + 1] = (uint32_t)l; nVal++; } }
     else if (f == 2) { if (nFeat < (uint32_t)MAX_TMP) { s_tmpFeat[2 * nFeat] = (uint32_t)i; s_tmpFeat[2 * nFeat + 1] = (uint32_t)l; nFeat++; } }
     i += l;
@@ -150,6 +168,10 @@ void indexLayer(const uint8_t *b, size_t start, size_t end, LayerIdx &out, uint8
   if (!nFeat) return;
   out.f = (Feat *)ps(sizeof(Feat) * nFeat);
   if (!out.f) return;
+  if (names && nVal) {
+    out.vals = (uint32_t *)psRaw(sizeof(uint32_t) * 2 * nVal);
+    if (out.vals) { memcpy(out.vals, s_tmpVal, sizeof(uint32_t) * 2 * nVal); out.nVals = nVal; out.keyHe = heKey; out.keyName = nameKey; out.keyEn = enKey; }
+  }
   for (uint32_t q = 0; q < nFeat; q++) {              // pass 2: geometry + kind of each feature
     featTick();
     size_t j = s_tmpFeat[2 * q];
@@ -183,13 +205,16 @@ void indexLayer(const uint8_t *b, size_t start, size_t end, LayerIdx &out, uint8
         break;
       }
     }
+    ft.tagOff = (uint32_t)tagOff;
+    ft.tagLen = (uint16_t)tagLen;
     if (ft.glen) out.f[out.n++] = ft;
   }
 }
 
 void freeTile(Tile &t) {
-  for (LayerIdx *l : { &t.earth, &t.landuse, &t.landcover, &t.water, &t.buildings, &t.roads }) {
+  for (LayerIdx *l : { &t.earth, &t.landuse, &t.landcover, &t.water, &t.buildings, &t.roads, &t.places }) {
     if (l->f) heap_caps_free(l->f);
+    if (l->vals) heap_caps_free(l->vals);
     *l = LayerIdx();
   }
   MapTiles::release(t.buf);
@@ -221,7 +246,8 @@ bool indexTile(Tile &t) {
       else if (strEq(name, nameLen, "landcover")) indexLayer(b, i, le, t.landcover, landKind);
       else if (strEq(name, nameLen, "water")) indexLayer(b, i, le, t.water, waterKind);
       else if (s_wantBuildings && strEq(name, nameLen, "buildings")) indexLayer(b, i, le, t.buildings, nullptr);
-      else if (strEq(name, nameLen, "roads")) indexLayer(b, i, le, t.roads, roadKind);
+      else if (strEq(name, nameLen, "roads")) indexLayer(b, i, le, t.roads, roadKind, true);
+      else if (strEq(name, nameLen, "places")) indexLayer(b, i, le, t.places, placeKind, true);
     }
     i = le;
   }
@@ -457,6 +483,238 @@ void drawRoads(const Tile &t, const View &v, int kind, bool casing, float sc) {
   }
 }
 
+// ---- labels: street and place names ---------------------------------------------------------------------
+// Names come from the tiles ("name:he", else "name", else "name:en"), are laid out with MapText (Hebrew right to
+// left, Latin / digits left to right) and drawn on top of everything with a dark halo. Road names follow the road
+// (straight stretches only), place names are horizontal. Boxes of the labels already placed keep new ones off them.
+constexpr int MAX_BOX = 140;
+float s_box[MAX_BOX][4];
+int s_nBox = 0;
+uint32_t s_nameHash[MAX_BOX];
+float s_namePos[MAX_BOX][2];
+int s_nName = 0;
+
+constexpr uint16_t LBL_TEXT = rgb(236, 240, 248), LBL_HALO = rgb(12, 15, 22);
+
+uint32_t hashBytes(const uint8_t *s, size_t n) {
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < n; i++) h = (h ^ s[i]) * 16777619u;
+  return h;
+}
+
+inline uint16_t mix565(uint16_t d, uint16_t c, int a) {                 // a: 0..256
+  if (a <= 0) return d;
+  if (a >= 256) return c;
+  const int dr = (d >> 11) & 31, dg = (d >> 5) & 63, db = d & 31;
+  const int cr = (c >> 11) & 31, cg = (c >> 5) & 63, cb = c & 31;
+  const int r = dr + (((cr - dr) * a) >> 8), g = dg + (((cg - dg) * a) >> 8), b = db + (((cb - db) * a) >> 8);
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// One glyph, rotated: pen = baseline origin, t = unit vector along the text; gain 256 = the glyph's own alpha
+void blitGlyph(const MapFont &f, const MapGlyph &g, float penX, float penY, float tx, float ty, uint16_t color, int gain) {
+  if (!g.w || !g.h) return;
+  const float nx = -ty, ny = tx;
+  const float lx0 = g.bx, ly0 = -(float)g.by, lx1 = lx0 + g.w, ly1 = ly0 + g.h;
+  float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
+  for (int c = 0; c < 4; c++) {
+    const float lx = (c & 1) ? lx1 : lx0, ly = (c & 2) ? ly1 : ly0;
+    const float x = penX + lx * tx + ly * nx, y = penY + lx * ty + ly * ny;
+    minx = fminf(minx, x); maxx = fmaxf(maxx, x); miny = fminf(miny, y); maxy = fmaxf(maxy, y);
+  }
+  const int x0 = max(0, (int)floorf(minx) - 1), x1 = min(W - 1, (int)ceilf(maxx) + 1);
+  const int y0 = max(0, (int)floorf(miny) - 1), y1 = min(H - 1, (int)ceilf(maxy) + 1);
+  const uint8_t *bits = f.bits + g.off;
+  const int stride = (g.w + 1) / 2;
+  auto px = [&](int i, int j) -> int {
+    if (i < 0 || j < 0 || i >= g.w || j >= g.h) return 0;
+    const uint8_t v = bits[j * stride + (i >> 1)];
+    return (i & 1) ? (v & 15) : (v >> 4);
+  };
+  for (int y = y0; y <= y1; y++) {
+    uint16_t *row = s_cv + y * W;
+    for (int x = x0; x <= x1; x++) {
+      const float dx = x + 0.5f - penX, dy = y + 0.5f - penY;
+      const float u = dx * tx + dy * ty - lx0 - 0.5f, v = dx * nx + dy * ny - ly0 - 0.5f;
+      if (u < -1 || v < -1 || u > g.w || v > g.h) continue;
+      const int iu = (int)floorf(u), iv = (int)floorf(v);
+      const float fu = u - iu, fv = v - iv;
+      const float a = (px(iu, iv) * (1 - fu) + px(iu + 1, iv) * fu) * (1 - fv) + (px(iu, iv + 1) * (1 - fu) + px(iu + 1, iv + 1) * fu) * fv;
+      const int a256 = (int)(a * 256.0f / 15.0f) * gain >> 8;
+      if (a256 > 3) row[x] = mix565(row[x], color, a256);
+    }
+  }
+  throttle((x1 - x0 + 1) * (y1 - y0 + 1) / 2);
+}
+
+void drawRun(const MapFont &f, const MapText::Run &run, float cx, float cy, float tx, float ty) {
+  const float nx = -ty, ny = tx;
+  const float ox = cx - tx * run.width * 0.5f + nx * f.size * 0.30f, oy = cy - ty * run.width * 0.5f + ny * f.size * 0.30f;
+  static const int HX[8] = { -1, 1, 0, 0, -1, 1, -1, 1 }, HY[8] = { 0, 0, -1, 1, -1, 1, 1, -1 };
+  const int nh = f.size >= 16 ? 8 : 4;
+  float pen = 0;
+  for (int i = 0; i < run.n; i++) {                                  // halo of every glyph, then the text
+    const MapGlyph &g = *run.g[i];
+    for (int h = 0; h < nh; h++) blitGlyph(f, g, ox + tx * pen + HX[h], oy + ty * pen + HY[h], tx, ty, LBL_HALO, 512);
+    pen += g.adv;
+  }
+  pen = 0;
+  for (int i = 0; i < run.n; i++) {
+    blitGlyph(f, *run.g[i], ox + tx * pen, oy + ty * pen, tx, ty, LBL_TEXT, 256);
+    pen += run.g[i]->adv;
+  }
+}
+
+// Box of a label (axis-aligned, around the rotated text) and the test against the labels already placed
+void labelBox(const MapFont &f, int width, float cx, float cy, float tx, float ty, float *b) {
+  const float hw = width * 0.5f + 3, hh = f.size * 0.62f + 2;
+  const float ex = fabsf(tx) * hw + fabsf(ty) * hh, ey = fabsf(ty) * hw + fabsf(tx) * hh;
+  b[0] = cx - ex; b[1] = cy - ey; b[2] = cx + ex; b[3] = cy + ey;
+}
+
+bool boxFree(const float *b) {
+  if (b[0] < 2 || b[1] < 2 || b[2] > W - 2 || b[3] > H - 2) return false;
+  for (int i = 0; i < s_nBox; i++)
+    if (b[0] < s_box[i][2] && b[2] > s_box[i][0] && b[1] < s_box[i][3] && b[3] > s_box[i][1]) return false;
+  return true;
+}
+
+bool nameNear(uint32_t h, float x, float y, float dist) {
+  for (int i = 0; i < s_nName; i++)
+    if (s_nameHash[i] == h && fabsf(s_namePos[i][0] - x) < dist && fabsf(s_namePos[i][1] - y) < dist) return true;
+  return false;
+}
+
+void remember(const float *b, uint32_t h, float x, float y) {
+  if (s_nBox < MAX_BOX) { memcpy(s_box[s_nBox], b, sizeof(float) * 4); s_nBox++; }
+  if (s_nName < MAX_BOX) { s_nameHash[s_nName] = h; s_namePos[s_nName][0] = x; s_namePos[s_nName][1] = y; s_nName++; }
+}
+
+bool valueString(const uint8_t *b, uint32_t off, uint32_t len, const uint8_t **s, size_t *n) {
+  size_t p = off;
+  const size_t pe = (size_t)off + len;
+  while (p < pe) {
+    const uint64_t vk = rdVar(b, p, pe);
+    if ((vk >> 3) == 1 && (vk & 7) == 2) { *n = rdVar(b, p, pe); *s = b + p; return p + *n <= pe; }
+    if (!skipField(b, p, pe, (int)(vk & 7))) return false;
+  }
+  return false;
+}
+
+// The feature's name in the order Hebrew, local, English; the first one the font can show wins.
+bool featureText(const Tile &t, const LayerIdx &L, const Feat &f, const MapFont &font, MapText::Run &run, uint32_t &hash) {
+  if (!L.vals || !f.tagLen) return false;
+  const uint8_t *b = t.buf.p;
+  uint32_t vi[3] = { UINT32_MAX, UINT32_MAX, UINT32_MAX };
+  size_t p = f.tagOff;
+  const size_t pe = (size_t)f.tagOff + f.tagLen;
+  while (p < pe) {
+    const uint32_t kk = (uint32_t)rdVar(b, p, pe), vv = (uint32_t)rdVar(b, p, pe);
+    if ((int)kk == L.keyHe) vi[0] = vv;
+    else if ((int)kk == L.keyName) vi[1] = vv;
+    else if ((int)kk == L.keyEn) vi[2] = vv;
+  }
+  for (int c = 0; c < 3; c++) {
+    if (vi[c] >= L.nVals) continue;
+    const uint8_t *s;
+    size_t n;
+    if (!valueString(b, L.vals[2 * vi[c]], L.vals[2 * vi[c] + 1], &s, &n)) continue;
+    if (MapText::layout(font, s, (int)n, run)) { hash = hashBytes(s, n); return true; }
+  }
+  return false;
+}
+
+// A label along a polyline (s_sx / s_sy, points a .. z): the straightest stretch near the middle that fits the text
+bool labelOnLine(const MapFont &font, const MapText::Run &run, uint32_t hash, int a, int z) {
+  const int np = z - a;
+  if (np < 2 || np > MAX_EDGES) return false;
+  float *cum = s_xs;                                    // distances along the line (scratch)
+  cum[0] = 0;
+  for (int i = 1; i < np; i++) cum[i] = cum[i - 1] + hypotf(s_sx[a + i] - s_sx[a + i - 1], s_sy[a + i] - s_sy[a + i - 1]);
+  const float total = cum[np - 1], w = (float)run.width;
+  if (total < w + 14) return false;
+  auto at = [&](float d, float &x, float &y) {
+    int lo = 0, hi = np - 1;
+    while (hi - lo > 1) { const int m = (lo + hi) / 2; if (cum[m] <= d) lo = m; else hi = m; }
+    const float seg = cum[hi] - cum[lo], u = seg > 0 ? (d - cum[lo]) / seg : 0;
+    x = s_sx[a + lo] + (s_sx[a + hi] - s_sx[a + lo]) * u;
+    y = s_sy[a + lo] + (s_sy[a + hi] - s_sy[a + lo]) * u;
+  };
+  const float mid = (total - w) * 0.5f, step = 9.0f;
+  for (int k = 0; k <= (int)((total - w) / step) + 1; k++) {
+    for (int sgn = (k == 0 ? 1 : -1); sgn <= 1; sgn += 2) {
+      const float s = mid + sgn * k * step;
+      if (s < 0 || s + w > total) continue;
+      float x0, y0, x1, y1;
+      at(s, x0, y0);
+      at(s + w, x1, y1);
+      const float dx = x1 - x0, dy = y1 - y0, len = hypotf(dx, dy);
+      if (len < w * 0.6f) continue;                      // curled up
+      const float ux = dx / len, uy = dy / len;
+      bool straight = true;
+      for (int i = 1; i < np - 1 && straight; i++)
+        if (cum[i] > s && cum[i] < s + w && fabsf((s_sx[a + i] - x0) * uy - (s_sy[a + i] - y0) * ux) > 2.2f) straight = false;
+      if (!straight) continue;
+      float tx = ux, ty = uy;
+      if (tx < 0) { tx = -tx; ty = -ty; }                // never upside down
+      const float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
+      float box[4];
+      labelBox(font, run.width, cx, cy, tx, ty, box);
+      if (!boxFree(box) || nameNear(hash, cx, cy, 230)) continue;
+      drawRun(font, run, cx, cy, tx, ty);
+      remember(box, hash, cx, cy);
+      return true;
+    }
+  }
+  return false;
+}
+
+void drawLabels(float zoom, const View *views, int nt) {
+  s_nBox = s_nName = 0;
+  MapText::Run run;
+  uint32_t hash;
+  // place names first: they have priority over street names
+  for (int i = 0; i < nt; i++) {
+    const Tile &t = s_tiles[i];
+    for (uint32_t q = 0; q < t.places.n && s_nBox < MAX_BOX; q++) {
+      featTick();
+      const Feat &f = t.places.f[q];
+      if (f.type != 1 || f.kind == 0) continue;
+      if (f.kind == 2 && (zoom < 15.0f || zoom > 17.0f)) continue;              // neighbourhoods
+      if (f.kind == 1 && zoom > 17.1f) continue;                                // towns and cities
+      const MapFont &font = f.kind == 1 ? MAPFONT_LARGE : MAPFONT_SMALL;
+      int nR;
+      float x0, y0, x1, y1;
+      const int np = decodeGeom(t, f, views[i], nR, x0, y0, x1, y1);
+      if (np < 1 || !featureText(t, t.places, f, font, run, hash)) continue;
+      float box[4];
+      labelBox(font, run.width, s_sx[0], s_sy[0], 1, 0, box);
+      if (!boxFree(box) || nameNear(hash, s_sx[0], s_sy[0], 400)) continue;
+      drawRun(font, run, s_sx[0], s_sy[0], 1, 0);
+      remember(box, hash, s_sx[0], s_sy[0]);
+    }
+  }
+  const int minKind = zoom < 14.5f ? R_MAJOR : (zoom < 15.5f ? R_MEDIUM : R_MINOR);
+  for (int pass = 0; pass < 2; pass++) {                                          // bigger roads first
+    for (int i = 0; i < nt; i++) {
+      const Tile &t = s_tiles[i];
+      for (uint32_t q = 0; q < t.roads.n && s_nBox < MAX_BOX; q++) {
+        featTick();
+        const Feat &f = t.roads.f[q];
+        if (f.type != 2 || f.kind < minKind || f.kind == R_RAIL) continue;
+        if ((pass == 0) != (f.kind >= R_MEDIUM)) continue;
+        int nR;
+        float x0, y0, x1, y1;
+        const int np = decodeGeom(t, f, views[i], nR, x0, y0, x1, y1);
+        if (np < 2 || x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+        if (!featureText(t, t.roads, f, MAPFONT_SMALL, run, hash)) continue;
+        for (int r = 0; r < nR; r++)
+          if (labelOnLine(MAPFONT_SMALL, run, hash, s_ring[r], r + 1 < nR ? s_ring[r + 1] : np)) break;
+      }
+    }
+  }
+}
+
 inline bool aborted() { return s_haveWant || !s_run; }
 
 bool renderFrame(const MapRender::Req &rq) {
@@ -539,6 +797,14 @@ bool renderFrame(const MapRender::Req &rq) {
     }
     thickLine(0, n, 9.0f * sc, rgb(10, 12, 18));
     thickLine(0, n, 6.0f * sc, rgb(255, 87, 34));
+  }
+  if (!aborted()) {
+    View views[MAX_TILES];
+    for (int i = 0; i < nt; i++) views[i] = view(s_tiles[i]);
+    const uint32_t tl = millis();
+    drawLabels(zoom, views, nt);
+    s_labelMs = millis() - tl;
+    s_labels = s_nBox;
   }
   s_lastTiles = nt;
   for (int i = 0; i < nt; i++) freeTile(s_tiles[i]);
@@ -650,7 +916,7 @@ bool MapRender::poll(const uint16_t **frame, Req *rendered) {
 
 MapRender::Status MapRender::status() {
   return { s_busy || s_haveWant, s_mapOk, s_err, s_lastMs, s_lastTiles, s_frames,
-           s_task ? (uint32_t)uxTaskGetStackHighWaterMark(s_task) : 0 };
+           s_task ? (uint32_t)uxTaskGetStackHighWaterMark(s_task) : 0, s_labelMs, s_labels };
 }
 
 void MapRender::setTrack(const float *lat, const float *lon, int n) {

@@ -27,7 +27,7 @@ namespace MapRender {
   void request(const Req &r);
   bool poll(const uint16_t **frame, Req *rendered);   // true once per finished frame (image valid until the next poll)
 
-  struct Status { bool busy; bool mapOk; const char *error; uint32_t lastMs, lastTiles, frames, stackFree; };
+  struct Status { bool busy; bool mapOk; const char *error; uint32_t lastMs, lastTiles, frames, stackFree, labelMs, labels; };
   Status status();
 
   // Track overlay (the recording trip): drawn on every frame until cleared. n <= 600; copied.

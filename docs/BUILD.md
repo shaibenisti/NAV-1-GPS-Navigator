@@ -32,7 +32,7 @@ or the browser flasher (Chrome / Edge) on the project's GitHub Pages site, or `p
 ```powershell
 .\idf-build.ps1                      # compile → idf\build\NAV1.bin
 .\idf-build.ps1 -Upload              # compile + flash (COM3; -Port COM5 to change)
-.\idf-build.ps1 -Upload -OutDir archive\v0.5.3   # also keep the binaries and sdkconfig
+.\idf-build.ps1 -Upload -OutDir archive\v0.6.0   # also keep the binaries and sdkconfig
 .\idf-build.ps1 -Menuconfig          # browse system settings (copy changes into idf\sdkconfig.defaults)
 ```
 
@@ -71,8 +71,9 @@ It opens every app several times and checks for memory leaks, runs the on-device
 | `nav.ps1`, `NavSerial.ps1` | Console client |
 | `shot.ps1`, `shotdocs.ps1` | Screenshot of the real display over the console (`-Open "page Settings 2;open Settings"` first) / the set in `docs/screenshots` |
 | `ota.ps1` | Build + install over Wi-Fi with rollback |
+| `mapfont.py` | Builds the map label font (`firmware/src/services/MapFontData.cpp`) from a TrueType font with ImageMagick |
 | `shiftnmea.py` | Move a recorded NMEA session to another place (for demos and screenshots without real locations) |
-| `shotframe.ps1`, `stlrender.py` | The README overview picture (framed screenshots, ImageMagick); a dependency-free STL renderer for the case previews |
+| `shotmap.ps1`, `shotframe.ps1`, `stlrender.py` | The README overview picture (framed screenshots, ImageMagick); a dependency-free STL renderer for the case previews |
 | `maps.ps1`, `mapload.ps1`, `maps_sat_fetch.py` | Build the offline maps and put them on the card; load-test the map server |
 | `mvtlib.py`, `maprender.py` | Readable Python version of the map renderer (`python maprender.py <lon> <lat> out.png`, needs a `.pmtiles`; set `NAV1_PMTILES`) |
 | `tripmap.ps1`, `tripmap-standalone.ps1` | Draw a trip on OpenStreetMap, locally or as one self-contained HTML page |

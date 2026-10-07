@@ -1,6 +1,6 @@
 """Prototype of the NAV-1 on-screen street map: render a PMTiles (Protomaps) area to a PNG.
 usage: maprender.py <lon> <lat> [out.png] [zoom=15.5] [w=480] [h=688]
-Same algorithm the device uses: tiles z15 (extent 4096), scanline polygon fill, thick polylines, no labels."""
+Same algorithm the device uses: tiles z15 (extent 4096), scanline polygon fill, thick polylines. (The device version also draws street and place names; this prototype does not.)"""
 import sys, math, zlib, struct
 import mvtlib as m
 

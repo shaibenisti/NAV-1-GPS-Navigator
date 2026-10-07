@@ -50,7 +50,7 @@ The map is a single file, `/maps/<name>.pmtiles`, made on a PC:
 .\tools\scripts\maps.ps1 -Card G: -Bbox "34.2,29.45,35.95,33.35"    # west,south,east,north of your own region
 ```
 
-The street map comes from a Protomaps basemap build (OpenStreetMap data, zoom 0–15; Israel is ≈ 185 MB, a small country a few tens of MB). The Map app on the device reads `/maps/israel.pmtiles` — to use another region, name the file accordingly or change `MAP_FILE` in `firmware/src/apps/MapApp.cpp`. Without the file the app says "No map on the card". Labels are not drawn (the UI font has no street-name glyphs); roads, water, parks, buildings and land use are.
+The street map comes from a Protomaps basemap build (OpenStreetMap data, zoom 0–15; Israel is ≈ 185 MB, a small country a few tens of MB). The Map app on the device reads `/maps/israel.pmtiles` — to use another region, name the file accordingly or change `MAP_FILE` in `firmware/src/apps/MapApp.cpp`. Without the file the app says "No map on the card". The map shows roads, water, parks, buildings and land use, with **street and place names** (Hebrew, and Latin where there is no Hebrew name; names in other scripts are left out). Street names follow the road, place names are horizontal; zoomed out you see only the bigger roads' names.
 
 ## Customising from the SD card
 

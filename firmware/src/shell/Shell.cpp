@@ -518,8 +518,8 @@ void handleLine(const char *cmd) {
   } else if (strcmp(cmd, "map") == 0) {
     const MapRender::Status m = MapRender::status();
     const MapTiles::Stats t = MapTiles::stats();
-    Serial.printf("[MAP] %s, last render %u ms (%u tiles), frames %u, task stack unused %u B, error '%s'; tiles read %u (avg %u ms), dir reads %u, %u KB from the card\n",
-                  m.mapOk ? (m.busy ? "rendering" : "idle") : "closed", (unsigned)m.lastMs, (unsigned)m.lastTiles, (unsigned)m.frames,
+    Serial.printf("[MAP] %s, last render %u ms (%u tiles, labels %u ms for %u), frames %u, task stack unused %u B, error '%s'; tiles read %u (avg %u ms), dir reads %u, %u KB from the card\n",
+                  m.mapOk ? (m.busy ? "rendering" : "idle") : "closed", (unsigned)m.lastMs, (unsigned)m.lastTiles, (unsigned)m.labelMs, (unsigned)m.labels, (unsigned)m.frames,
                   (unsigned)m.stackFree, m.error, (unsigned)t.tiles, t.tiles ? (unsigned)(t.tileMsSum / t.tiles) : 0, (unsigned)t.dirReads,
                   (unsigned)(t.bytesRead >> 10));
   } else if (strcmp(cmd, "races") == 0) {
