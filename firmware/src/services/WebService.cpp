@@ -1,6 +1,8 @@
 #include "WebService.h"
 
 #include <WebServer.h>
+#include <new>
+#include <esp_heap_caps.h>
 #include <ESPmDNS.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -94,9 +96,10 @@ loc();st();trips();places();nav();setInterval(loc,2000);setInterval(st,10000);se
 </script></body></html>)HTML";
 
 constexpr uint32_t WEB_STACK = 8192;
+constexpr size_t XFER = 4096;                              // file transfer chunk (PSRAM buffer)
 SdLog *s_sd = nullptr;
 WebServer s_server(80);
-bool s_started = false;
+volatile bool s_started = false;                            // the server task runs (it clears this itself when it ends)
 TaskHandle_t s_task = nullptr;
 uint32_t s_requests = 0;                                    // written by the web task only
 SemaphoreHandle_t s_lock = nullptr;                        // UI loop <-> web task (a mutex: String copies allocate)
@@ -273,8 +276,20 @@ void handleNavStop() {
   runCommand(c);
 }
 
+// Web task buffers in PSRAM (allocated at the first use, kept): internal RAM is for the radios.
+uint8_t *xferBuf() {
+  static uint8_t *b = nullptr;
+  if (!b) b = (uint8_t *)heap_caps_malloc(XFER, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return b;
+}
+
 void handleTrips() {
-  static TripRecorder::Summary trips[30];                   // web task only
+  static TripRecorder::Summary *trips = nullptr;            // web task only
+  if (!trips) {
+    trips = (TripRecorder::Summary *)heap_caps_malloc(sizeof(TripRecorder::Summary) * 30, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!trips) { s_server.send(503, "text/plain", "no memory"); return; }
+    for (int i = 0; i < 30; i++) new (&trips[i]) TripRecorder::Summary();
+  }
   const int n = TripRecorder::list(trips, 30);
   String j = "[";
   for (int i = 0; i < n; i++) {
@@ -303,9 +318,9 @@ void handleFile() {
   s_server.sendHeader("Content-Disposition", "attachment; filename=\"NAV-1_" + name + ext + "\"");
   s_server.setContentLength(size);
   s_server.send(200, ext == ".gpx" ? "application/gpx+xml" : "text/csv", "");
-  static uint8_t buf[4096];
-  for (int32_t off = 0; off < size;) {
-    const int got = s_sd->readChunk(path.c_str(), off, buf, sizeof(buf));
+  uint8_t *buf = xferBuf();
+  for (int32_t off = 0; buf && off < size;) {
+    const int got = s_sd->readChunk(path.c_str(), off, buf, XFER);
     if (got <= 0) break;
     s_server.sendContent((const char *)buf, got);
     off += got;
@@ -336,9 +351,9 @@ bool safePath(const String &p) {
 }
 
 void handleStatic(String path) {
-  static uint8_t buf[4096];
+  uint8_t *buf = xferBuf();
   uint32_t size = 0;
-  if (!safePath(path) || s_sd->readAt(path.c_str(), 0, buf, 0, &size) < 0) { s_server.send(404, "text/plain", "not found"); return; }
+  if (!buf || !safePath(path) || s_sd->readAt(path.c_str(), 0, buf, 0, &size) < 0) { s_server.send(404, "text/plain", "not found"); return; }
   s_readerUsedMs = millis();
   uint32_t from = 0, to = size ? size - 1 : 0;
   const String range = s_server.header("Range");                  // "bytes=a-b" or "bytes=a-"
@@ -359,7 +374,7 @@ void handleStatic(String path) {
   s_server.setContentLength(size ? to - from + 1 : 0);
   s_server.send(partial ? 206 : 200, contentType(path), "");
   for (uint32_t off = from; size && off <= to;) {
-    const int got = s_sd->readAt(path.c_str(), off, buf, min<uint32_t>(sizeof(buf), to - off + 1));
+    const int got = s_sd->readAt(path.c_str(), off, buf, min<uint32_t>(XFER, to - off + 1));
     if (got <= 0) break;
     s_server.sendContent((const char *)buf, got);
     off += got;
@@ -411,7 +426,9 @@ void handleUpdateDone() {
   else s_server.send(Ota::state() == Ota::State::Idle ? 403 : 400, "application/json", "{\"ok\":false,\"error\":\"" + e + "\"}");
 }
 
-void webTask(void *) {
+volatile bool s_stopReq = false;                            // UI loop -> web task: the network is gone, end the task
+
+void addRoutes() {
   s_server.on("/", HTTP_GET, [] { s_requests++; s_server.send_P(200, "text/html", PAGE); });
   s_server.on("/api/update", HTTP_POST, handleUpdateDone, handleUpdateUpload);
   s_server.on("/api/status", HTTP_GET, [] { s_requests++; sendJson(copyLocked(s_statusJson)); });
@@ -427,12 +444,25 @@ void webTask(void *) {
   s_server.enableCORS(true);
   const char *hdrs[] = { "Range" };
   s_server.collectHeaders(hdrs, 1);
+}
+
+// Runs while there is a network (station connected or hotspot on). Without one it ends and gives its stack
+// (8 KB internal RAM) and the server's sockets back; the next network starts it again.
+void webTask(void *) {
+  static bool routes = false;
+  if (!routes) { addRoutes(); routes = true; }
   s_server.begin();
-  for (;;) {
+  while (!s_stopReq) {
     s_server.handleClient();
     if (s_readerUsedMs && millis() - s_readerUsedMs > 5000) { s_sd->readerClose(); s_readerUsedMs = 0; }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
+  s_server.stop();
+  s_sd->readerClose();
+  s_readerUsedMs = 0;
+  s_task = nullptr;
+  s_started = false;                                        // last: update() may start a new task from here on
+  vTaskDelete(nullptr);
 }
 
 }  // namespace
@@ -447,9 +477,14 @@ void WebService::update() {
   if (millis() - s_lastPrepMs < 500) return;
   s_lastPrepMs = millis();
   const bool sta = WifiService::state() == WifiService::State::Connected;
-  if (!sta && !WifiService::hotspotOn()) return;
+  if (!sta && !WifiService::hotspotOn()) {                  // no network: end the server task (memory back)
+    if (s_started && !s_stopReq) { s_stopReq = true; Serial.println("[WEB] no network: server stopped"); }
+    return;
+  }
+  if (s_stopReq && s_started) return;                       // still ending
+  s_stopReq = false;
   prepare();
-  if (!s_started) {                                         // first network: start the server task
+  if (!s_started) {                                         // a network: start the server task
     s_started = xTaskCreatePinnedToCore(webTask, "web", WEB_STACK, nullptr, 2, &s_task, 0) == pdPASS;
     if (s_started) {
       Serial.printf("[WEB] serving %s and %s\n", url().c_str(), localUrl().c_str());

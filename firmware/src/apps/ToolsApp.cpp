@@ -8,6 +8,7 @@
 //    Update     - allow a firmware upload over Wi-Fi for 10 min (Ota, tools/scripts/ota.ps1)
 // =============================================================================
 #include "App.h"
+#include <esp_heap_caps.h>
 
 #include <Arduino.h>
 #include "../diag/Diag.h"
@@ -178,7 +179,8 @@ void update() {
   if (millis() - last < 2000 && !healthEmpty) return;
   last = millis();
   if (s_page == P_HEALTH) {
-    static Diag::HealthRow rows[HEALTH_ROWS];
+    static Diag::HealthRow *rows = (Diag::HealthRow *)heap_caps_malloc(sizeof(Diag::HealthRow) * HEALTH_ROWS, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!rows) return;
     static const uint32_t COLOR[] = { 0x66BB6A, 0xFFB300, 0xFF5252, 0x8A96A6 };   // OK, attention, problem, off
     const int n = Diag::healthRows(rows, HEALTH_ROWS);
     for (int i = 0; i < HEALTH_ROWS; i++) {

@@ -4,7 +4,7 @@
 
     .\idf-build.ps1                  # compile
     .\idf-build.ps1 -Upload          # compile + flash (COM3)
-    .\idf-build.ps1 -Upload -OutDir archive\v0.7.0
+    .\idf-build.ps1 -Upload -OutDir archive\v0.7.1
     .\idf-build.ps1 -Menuconfig      # browse the settings (writes idf\sdkconfig; copy changes to sdkconfig.defaults)
 #>
 param(

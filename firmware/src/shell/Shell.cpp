@@ -676,7 +676,8 @@ void diagPump() {
 
 static void heapCheck(const char *where) {
   const bool ok = heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true);
-  Serial.printf("[SHELL] heap integrity after %-12s: %s\n", where, ok ? "OK" : "CORRUPT");
+  Serial.printf("[SHELL] heap integrity after %-12s: %s (internal free %u KB)\n", where, ok ? "OK" : "CORRUPT",
+                (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >> 10));
 }
 
 void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {

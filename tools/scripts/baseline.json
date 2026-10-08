@@ -1,65 +1,65 @@
 {
   "_comment": "Expected NAV-1 measurements for validate.ps1 drift checks. 'worse' = direction that is a regression. A change smaller than min_abs is ignored; otherwise warn_pct / fail_pct of the baseline value. Refresh values with: validate.ps1 -UpdateBaseline (thresholds are kept).",
-  "firmware": "v0.6.0",
+  "firmware": "v0.7.1",
   "metrics": {
     "boot_ms": {
-      "value": 1693,
+      "value": 1732,
       "worse": "up",
       "min_abs": 300,
       "warn_pct": 25,
       "fail_pct": 60
     },
     "app_open_ms": {
-      "value": 557.0,
+      "value": 685.0,
       "worse": "up",
       "min_abs": 60,
       "warn_pct": 30,
       "fail_pct": 80
     },
     "home_ms": {
-      "value": 190.0,
+      "value": 189.0,
       "worse": "up",
       "min_abs": 60,
       "warn_pct": 50,
       "fail_pct": 150
     },
     "full_frame_ms": {
-      "value": 171,
+      "value": 177,
       "worse": "up",
       "min_abs": 15,
       "warn_pct": 25,
       "fail_pct": 60
     },
     "loop_stall_ms": {
-      "value": 5,
+      "value": 3,
       "worse": "up",
       "min_abs": 25,
       "warn_pct": 300,
       "fail_pct": 1000
     },
     "internal_free_kb": {
-      "value": 125,
+      "value": 157,
       "worse": "down",
       "min_abs": 6,
       "warn_pct": 8,
       "fail_pct": 25
     },
     "internal_largest_kb": {
-      "value": 83,
+      "value": 115,
       "worse": "down",
       "min_abs": 8,
       "warn_pct": 20,
       "fail_pct": 50
     },
     "psram_free_kb": {
-      "value": 6516,
+      "value": 6511,
       "worse": "down",
       "min_abs": 256,
       "warn_pct": 10,
       "fail_pct": 40
     },
     "firmware_kb": {
-      "value": 2008.0,
+      "value": 2087.0,
       "worse": "up",
       "min_abs": 64,
       "warn_pct": 10,

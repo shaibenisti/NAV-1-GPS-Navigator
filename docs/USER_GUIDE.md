@@ -33,7 +33,7 @@ Raw GPS data of every session is also logged to `/GPSLOG` (one NMEA and one CSV 
 
 ## Places and navigation
 
-**Saving places.** *Places → Save here* (needs a GPS fix) asks for a name — the on-screen keyboard types Latin letters; the phone page also takes Hebrew. On the Map, a long press on any point offers *Save as a place* and *Go here*. Up to 50 places; they live in `/data/places.json` on the card (editable on a PC, read at the next start).
+**Saving places.** *Places → Save here* (needs a GPS fix) asks for a name — the on-screen keyboard has a Hebrew layout (the עב / ABC button next to the text switches), and the phone page takes names too. On the Map, a long press on any point offers *Save as a place* and *Go here*. Up to 50 places; they live in `/data/places.json` on the card (editable on a PC, read at the next start).
 
 **Go to.** From a place (*Go to*), the map (*Go here*) or the phone. Navigate shows a big arrow and the distance in a straight line — there is no road routing on the device. While you move, the arrow is relative to your direction of travel (straight up = straight on); standing still the GPS has no heading, so the dial turns north up (the red N). The Map shows the destination as a red pin, a line from your position to it and a chip with the distance at the top (tap it for Navigate); the Compass marks the destination on its ring; the status bar shows the distance next to the clock. Within 25 m you get *Arrived*.
 

@@ -1,11 +1,11 @@
 {
   "name": "NAV-1",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "new_install_prompt_erase": false,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
-      "parts": [{ "path": "firmware/NAV1-v0.7.0-full.bin", "offset": 0 }]
+      "parts": [{ "path": "firmware/NAV1-v0.7.1-full.bin", "offset": 0 }]
     }
   ]
 }

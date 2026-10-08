@@ -5,7 +5,7 @@
 //    relative()     where the arrow points: towards the guide point, relative to the direction of
 //                   travel while moving, north up while standing still
 //    formatEta()    "12 min", "1 h 05"
-//    keyboard()     a full-screen text dialog (name of a place)
+//    keyboard()     a full-screen text dialog (name of a place), Latin or Hebrew
 // =============================================================================
 #pragma once
 
@@ -22,9 +22,10 @@ namespace NavUi {
   bool relative(float bearingDeg, float &angleDeg);
   void formatEta(uint32_t s, char *out, size_t n);
 
-  // Text dialog over the whole screen: title, one line of text (ASCII keyboard), OK / cancel.
-  // done(text) is called with the text on OK, nullptr on cancel; the dialog closes itself.
-  void keyboard(lv_obj_t *anyChild, const char *title, const char *initial, int maxLen, void (*done)(const char *text));
+  // Text dialog over the whole screen: title, one line of text, Latin / Hebrew keyboard (a button switches),
+  // OK / cancel. maxBytes: UTF-8 bytes (a Hebrew letter is 2). done(text) is called with the text on OK,
+  // nullptr on cancel; the dialog closes itself.
+  void keyboard(lv_obj_t *anyChild, const char *title, const char *initial, int maxBytes, void (*done)(const char *text));
   bool keyboardOpen();
   void keyboardClose();                  // app destroy(): drop it without a callback
 }

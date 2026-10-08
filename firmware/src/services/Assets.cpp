@@ -69,8 +69,8 @@ void Assets::begin(SdLog &sd, const char *const *appNames, int appCount) {
   if (!sd.mounted()) return;
   const uint32_t t0 = millis();
   // One directory read instead of probing a path per app (each missing-file open costs ~10 ms).
-  static SdLog::DirEntry e[24];
-  const int n = sd.listDir("/assets/icons", e, 24);
+  SdLog::DirEntry *e = (SdLog::DirEntry *)heap_caps_malloc(sizeof(SdLog::DirEntry) * 24, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  const int n = e ? sd.listDir("/assets/icons", e, 24) : 0;
   for (int k = 0; k < n; k++) {
     for (int i = 0; i < appCount && i < MAX_APPS; i++) {
       char name[40];
@@ -81,7 +81,8 @@ void Assets::begin(SdLog &sd, const char *const *appNames, int appCount) {
       s_hasIcon[i] = load(sd, path, ICON_MAX, ICON_MAX, s_icons[i]);
     }
   }
-  if (sd.listDir("/assets/wallpapers", e, 24) > 0) s_hasWall = load(sd, "/assets/wallpapers/home.bin", Display::UI_W, Display::UI_H, s_wall);
+  if (e && sd.listDir("/assets/wallpapers", e, 24) > 0) s_hasWall = load(sd, "/assets/wallpapers/home.bin", Display::UI_W, Display::UI_H, s_wall);
+  heap_caps_free(e);
   if (s_loaded || s_rejected)
     Serial.printf("[ASSET] %d loaded, %d ignored (%u ms)\n", s_loaded, s_rejected, (unsigned)(millis() - t0));
 }

@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include <esp_heap_caps.h>
+#include <new>
 #include "../services/TripRecorder.h"
 #include "../services/Location.h"
 #include "../services/Navigator.h"
@@ -34,7 +35,7 @@ struct Ui {
   bool wasRecording = false, listPending = false;
 };
 Ui s_ui;
-TripRecorder::Summary s_trips[MAX_TRIPS];
+TripRecorder::Summary *s_trips = nullptr;   // PSRAM while the app is open (MAX_TRIPS)
 int s_tripCount = 0;
 lv_point_precise_t *s_route = nullptr;   // points of the drawn route (PSRAM, kept while shown)
 
@@ -302,7 +303,7 @@ void updateTotals() {
 }
 
 void rebuildList() {
-  s_tripCount = TripRecorder::list(s_trips, MAX_TRIPS);
+  s_tripCount = s_trips ? TripRecorder::list(s_trips, MAX_TRIPS) : 0;
   lv_obj_clean(s_ui.list);
   lv_label_set_text_fmt(s_ui.tripsCount, "%d %s", s_tripCount, s_tripCount == 1 ? "trip" : "trips");
   if (!s_tripCount) label(s_ui.list, &lv_font_montserrat_20, lv_color_hex(0xBBBBBB), "No trips yet. Start one on the Record page.");
@@ -322,8 +323,18 @@ void rebuildList() {
 }
 
 // ---- lifecycle -------------------------------------------------------------------------
+void freeTrips() {
+  if (!s_trips) return;
+  for (int i = 0; i < MAX_TRIPS; i++) s_trips[i].~Summary();
+  heap_caps_free(s_trips);
+  s_trips = nullptr;
+  s_tripCount = 0;
+}
+
 void create(lv_obj_t *content) {
   s_ui = Ui();
+  s_trips = (TripRecorder::Summary *)heap_caps_malloc(sizeof(TripRecorder::Summary) * MAX_TRIPS, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (s_trips) for (int i = 0; i < MAX_TRIPS; i++) new (&s_trips[i]) TripRecorder::Summary();
   Apps::buildMenu(content, PAGE_NAME, P_COUNT, s_ui.menu, s_ui.page, onMenu);
   buildRecord(s_ui.page[P_RECORD]);
   buildTrips(s_ui.page[P_TRIPS]);
@@ -351,6 +362,7 @@ void update() {
 
 void destroy() {
   freeRoute();
+  freeTrips();
   s_ui = Ui();
 }
 

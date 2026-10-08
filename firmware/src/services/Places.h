@@ -7,7 +7,7 @@
 //      ...
 //    ]}
 //  The file can be edited on a PC (read at start-up; an unreadable file is kept as places.bad).
-//  Names are UTF-8 (Hebrew from the phone page, ASCII from the on-screen keyboard), 1..NAME_BYTES bytes.
+//  Names are UTF-8 (Hebrew or Latin, from the on-screen keyboard or the phone page), 1..NAME_BYTES bytes.
 //  Changes are written ~1 s later in the background (SdLog::writeFileAsync, shared with Settings).
 //  UI loop only: the web server reads json() through WebService (prepared in the loop).
 // =============================================================================

@@ -89,6 +89,11 @@ void printMem(Print &o) {
            (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) >> 10),
            (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) >> 10),
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_DMA) >> 10));
+  multi_heap_info_t hi;                                  // the internal heap as a whole: what is allocated, in how many pieces
+  heap_caps_get_info(&hi, MALLOC_CAP_INTERNAL);
+  o.printf("  internal heap %u KB: allocated %u KB in %u blocks, free %u KB in %u blocks\n",
+           (unsigned)(heap_caps_get_total_size(MALLOC_CAP_INTERNAL) >> 10), (unsigned)(hi.total_allocated_bytes >> 10),
+           (unsigned)hi.allocated_blocks, (unsigned)(hi.total_free_bytes >> 10), (unsigned)hi.free_blocks);
   o.printf("  PSRAM free %u KB (min %u KB, largest %u KB) of %u KB\n",
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >> 10),
            (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) >> 10),
@@ -475,7 +480,7 @@ int Diag::selfTest(Print &o, const char *only) {
       check(o, t, "sd", sd.writeErrors() == 0 && sd.droppedBytes() == 0 ? CHK_PASS : CHK_FAIL, "write errors %u, dropped bytes %u",
             (unsigned)sd.writeErrors(), (unsigned)sd.droppedBytes());
       // Files app layer: listing, free space, delete in the background, in-use protection.
-      static SdLog::DirEntry e[4];
+      SdLog::DirEntry e[4];                              // (self-test: on the stack, 4 entries)
       int total = 0;
       uint32_t t0 = millis();
       const int listed = sd.listDir("/GPSLOG", e, 4, &total);
@@ -726,12 +731,13 @@ bool Diag::command(const char *line, Print &o) {
     } else if (sub == "stop") {
       TripRecorder::stop();
     } else if (sub == "list") {
-      static TripRecorder::Summary trips[10];
+      TripRecorder::Summary *trips = new TripRecorder::Summary[10];   // only while listing
       const int n = TripRecorder::list(trips, 10);
       for (int i = 0; i < n; i++)
         o.printf("[TRIP] %s  %s  %.3f km  %lu s  max %.1f km/h  %lu points\n", trips[i].name.c_str(), trips[i].title.c_str(),
                  trips[i].distanceKm, (unsigned long)trips[i].durationS, trips[i].maxKmh, (unsigned long)trips[i].points);
       o.printf("[TRIP] list end (%d)\n", n);
+      delete[] trips;
     } else {
       if (TripRecorder::recording())
         o.printf("[TRIP] recording %s: %lu s, %.3f km, %lu points, max %.1f km/h%s\n", TripRecorder::name().c_str(),
@@ -796,7 +802,8 @@ bool Diag::command(const char *line, Print &o) {
     if (sub == "ls") { s_sd->list(path.length() ? path.c_str() : "/", o); o.println("[SD] list end"); }
     else if (sub == "cat" && path.length()) s_sd->dump(path.c_str(), o);
     else if (sub == "dir") {             // FatFs listing (Files app path): count + timing
-      static SdLog::DirEntry e[8];
+      SdLog::DirEntry *e = (SdLog::DirEntry *)heap_caps_malloc(sizeof(SdLog::DirEntry) * 8, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (!e) return true;
       int total = 0;
       const uint32_t t0 = millis();
       const int n = s_sd->listDir(path.length() ? path.c_str() : "/", e, 8, &total);
@@ -804,6 +811,7 @@ bool Diag::command(const char *line, Print &o) {
       for (int i = 0; i < n; i++)
         o.printf("  %s%-24s %10u  %04u-%02u-%02u %02u:%02u\n", e[i].dir ? "/" : " ", e[i].name, (unsigned)e[i].size,
                  1980 + (e[i].fdate >> 9), (e[i].fdate >> 5) & 15, e[i].fdate & 31, e[i].ftime >> 11, (e[i].ftime >> 5) & 63);
+      heap_caps_free(e);
     } else if (sub == "fs") {             // sd fs [path]: read-only file-system inspection
       s_sd->fsInfo(path.c_str(), o);
     } else if (sub == "sector") {         // sd sector <n>: raw read of one card sector (read-only)

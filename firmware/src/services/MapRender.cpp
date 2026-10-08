@@ -492,10 +492,10 @@ void drawRoads(const Tile &t, const View &v, int kind, bool casing, float sc) {
 // left, Latin / digits left to right) and drawn on top of everything with a dark halo. Road names follow the road
 // (straight stretches only), place names are horizontal. Boxes of the labels already placed keep new ones off them.
 constexpr int MAX_BOX = 140;
-float s_box[MAX_BOX][4];
+float (*s_box)[4] = nullptr;                 // PSRAM (begin): only while the map is open
 int s_nBox = 0;
-uint32_t s_nameHash[MAX_BOX];
-float s_namePos[MAX_BOX][2];
+uint32_t *s_nameHash = nullptr;
+float (*s_namePos)[2] = nullptr;
 int s_nName = 0;
 
 constexpr uint16_t LBL_TEXT = rgb(236, 240, 248), LBL_HALO = rgb(12, 15, 22);
@@ -913,9 +913,12 @@ bool MapRender::begin(const char *path) {
   s_rtCopy = s_rtLat ? s_rtLat + 2 * MAX_TRACK : nullptr;
   s_rtN = 0;
   s_pins = (MapRender::Pin *)ps(sizeof(MapRender::Pin) * MAX_PINS * 2);
+  s_box = (float (*)[4])ps(sizeof(float) * 4 * MAX_BOX);
+  s_namePos = (float (*)[2])ps(sizeof(float) * 2 * MAX_BOX);
+  s_nameHash = (uint32_t *)ps(sizeof(uint32_t) * MAX_BOX);
   s_pinCopy = s_pins ? s_pins + MAX_PINS : nullptr;
   s_pinN = 0;
-  if (!s_rtLat || !s_pins || !s_img[0] || !s_img[1] || !s_tiles || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
+  if (!s_rtLat || !s_pins || !s_box || !s_namePos || !s_nameHash || !s_img[0] || !s_img[1] || !s_tiles || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
     s_err = "out of memory";
     end();
     return false;
@@ -939,7 +942,7 @@ void MapRender::end() {
   if (s_tiles) { for (int i = 0; i < MAX_TILES; i++) freeTile(s_tiles[i]); }
   void **all[] = { (void **)&s_img[0], (void **)&s_img[1], (void **)&s_tiles, (void **)&s_sx, (void **)&s_sy, (void **)&s_ring,
                    (void **)&s_edges, (void **)&s_act, (void **)&s_xs, (void **)&s_tmpFeat, (void **)&s_tmpVal, (void **)&s_trkLat,
-                   (void **)&s_rtLat, (void **)&s_pins };
+                   (void **)&s_rtLat, (void **)&s_pins, (void **)&s_box, (void **)&s_namePos, (void **)&s_nameHash };
   for (void **p : all) { if (*p) heap_caps_free(*p); *p = nullptr; }
   s_trkN = s_rtN = s_pinN = 0;
   s_trkLon = s_trkCopy = s_rtLon = s_rtCopy = nullptr;

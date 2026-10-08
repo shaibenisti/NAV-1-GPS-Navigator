@@ -32,7 +32,7 @@ or the browser flasher (Chrome / Edge) on the project's GitHub Pages site, or `p
 ```powershell
 .\idf-build.ps1                      # compile → idf\build\NAV1.bin
 .\idf-build.ps1 -Upload              # compile + flash (COM3; -Port COM5 to change)
-.\idf-build.ps1 -Upload -OutDir archive\v0.7.0   # also keep the binaries and sdkconfig
+.\idf-build.ps1 -Upload -OutDir archive\v0.7.1   # also keep the binaries and sdkconfig
 .\idf-build.ps1 -Menuconfig          # browse system settings (copy changes into idf\sdkconfig.defaults)
 ```
 
@@ -99,5 +99,5 @@ python tools\scripts\cardcheck.py G:           # non-destructive capacity check 
 | Flash fails at "Connecting" | Another program has the COM port, or the wrong port — `-Port COMx`. Hold BOOT, tap RST, release BOOT as a fallback. |
 | Device restarts when you open the console | Normal for the CH340 bridge. |
 | "No map on the card" | `/maps/israel.pmtiles` is missing, or the card was not read — check **Files** and `nav.ps1 map`. |
-| Bluetooth will not start while Wi-Fi and the hotspot are on | It needs 80 KB of free internal RAM; turn the hotspot off first. |
+| Bluetooth will not start while Wi-Fi and the hotspot are on | It needs 80 KB of free internal RAM; turn the hotspot off first (`diag mem` shows what is free). |
 | First fix takes minutes | Normal after power-up (no backup battery in the GPS module); stand in the open. |

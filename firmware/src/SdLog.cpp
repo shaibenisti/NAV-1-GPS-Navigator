@@ -581,7 +581,8 @@ void SdLog::fsInfo(const char *path, Print &o) {
   if (r == FR_OK) { scl = f.obj.sclust; f_close(&f); }
   unlockCard();
   if (r != FR_OK) { o.printf("[FS] %s: f_open %d\n", path, (int)r); return; }
-  static uint8_t sec[4096];
+  uint8_t *sec = (uint8_t *)heap_caps_malloc(512, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);   // console only: not kept
+  if (!sec) { o.println("[FS] no memory"); return; }
   const LBA_t fatSec = fs->fatbase + scl / (512 / 4), dataSec = fs->database + (LBA_t)(scl - 2) * fs->csize;
   lockCard();
   const bool fatOk = disk_read(fs->pdrv, sec, fatSec, 1) == RES_OK;
@@ -592,12 +593,14 @@ void SdLog::fsInfo(const char *path, Print &o) {
            fatOk ? "" : "(read FAILED) ", (unsigned long)next, (unsigned long)dataSec, dataOk ? "ok" : "FAILED");
   for (int i = 0; i < 24; i++) o.write(isprint(sec[i]) ? sec[i] : '.');
   o.println();
+  heap_caps_free(sec);
 }
 
 void SdLog::rawSector(uint32_t sector, Print &o) {
   char p[8];
   if (!fatPath("/", p, sizeof(p))) { o.println("[FS] no volume"); return; }
-  static uint8_t sec[4096];
+  uint8_t *sec = (uint8_t *)heap_caps_malloc(512, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);   // console only: not kept
+  if (!sec) { o.println("[FS] no memory"); return; }
   lockCard();
   const DRESULT r = disk_read(p[0] - '0', sec, sector, 1);
   unlockCard();
@@ -607,6 +610,7 @@ void SdLog::rawSector(uint32_t sector, Print &o) {
            (unsigned long)(sector / 2048), r == RES_OK ? "ok" : "FAILED", (unsigned long)nz);
   for (int i = 0; i < 16; i++) o.printf("%02x", sec[i]);
   o.println();
+  heap_caps_free(sec);
 }
 
 int SdLog::listDir(const char *dir, DirEntry *out, int max, int *total) {
