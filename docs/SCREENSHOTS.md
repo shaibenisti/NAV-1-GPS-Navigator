@@ -1,6 +1,6 @@
 # Screenshots
 
-Real screenshots of the device (480 × 800, portrait), taken over the USB console with `tools/scripts/shotdocs.ps1`. The GPS, Compass, Map and Trips screens were captured while a recorded walk, moved to a neutral location, was replayed. Screens that open only by touch (dialogs, a trip's detail page) are not included.
+Real screenshots of the device (480 × 800, portrait), taken over the USB console with `tools/scripts/shotdocs.ps1`. The GPS, Compass, Map, Trips and navigation screens were captured while a recorded walk, moved to a neutral location, was replayed; the two places in them are demo points next to it. Screens that open only by touch (dialogs, a trip's detail page) are not included.
 
 ## Home
 
@@ -21,6 +21,24 @@ The offline street map: follows the position (north up or heading up), zoom 13�
 | Overview (zoom 13) | A finished trip (Trips → Show on map) |
 |:--:|:--:|
 | <img src="screenshots/map/overview.png" width="240"> | <img src="screenshots/map/trip.png" width="240"> |
+
+## Navigation
+
+Go to a saved place, or follow a recorded trip (here: the demo trip, forwards). The arrow is relative to the direction of travel while moving.
+
+| Where to? | Go to a place | Following a trip |
+|:--:|:--:|:--:|
+| <img src="screenshots/navigate/start.png" width="240"> | <img src="screenshots/navigate/place.png" width="240"> | <img src="screenshots/navigate/route.png" width="240"> |
+
+| Map while navigating | Compass with the destination | Drive dashboard |
+|:--:|:--:|:--:|
+| <img src="screenshots/map/go-to.png" width="240"> | <img src="screenshots/compass/destination.png" width="240"> | <img src="screenshots/drive/drive.png" width="240"> |
+
+## Places
+
+| Saved places | A place |
+|:--:|:--:|
+| <img src="screenshots/places/list.png" width="240"> | <img src="screenshots/places/detail.png" width="240"> |
 
 ## GPS and Compass
 

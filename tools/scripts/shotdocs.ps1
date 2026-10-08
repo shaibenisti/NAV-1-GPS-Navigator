@@ -26,7 +26,7 @@ Write-Host "static screens"
 Nav "gps live" 1 | Out-Null
 Nav "wifi off" 3 | Out-Null                                  # no network names or addresses on the screens
 Nav "ble off" 2 | Out-Null
-Shot "home" "page-1" "home"
+Shot "home" "page-1" "open Phone;home" 3                     # opening an app shows its page: page 1
 Shot "home" "page-2" "swipe"
 Nav "swipe" 1 | Out-Null
 Nav "wifi hotspot on" 8 | Out-Null
@@ -42,12 +42,12 @@ foreach ($p in 0..5) { Shot "settings" $n[$p] "page Settings $p;open Settings" }
 $n = @("health", "touch-test", "update")
 foreach ($p in 0..2) { Shot "tools" $n[$p] "page Tools $p;open Tools" }
 
-Write-Host "live screens (replay of $Replay at 3x)"
+Write-Host "live screens (replay of $Replay at 2x)"
 Nav "home" 1 | Out-Null
-Nav "gps replay $Replay 3" 3 | Out-Null
+Nav "gps replay $Replay 2" 3 | Out-Null                         # 2x: the walk lasts until the last live screen
 Start-Sleep 8
 Nav "trip start" 2 | Out-Null
-Start-Sleep 45                                                  # the trace builds up
+Start-Sleep 60                                                  # the trace builds up
 Shot "map" "following" "open Map" 12
 Nav "map zoom 6" 12 | Out-Null
 Shot "map" "street-level" "" 1
@@ -96,9 +96,11 @@ if ($base) {
   Nav "map trip $base" 12 | Out-Null
   Shot "map" "trip" "" 1
   Nav "home" 1 | Out-Null
-  Nav "nav follow $($base.Substring($base.LastIndexOf('/') + 1)) back" 2 | Out-Null
+  Nav "gps replay $Replay 3" 10 | Out-Null                   # at the walk's start again: follow the demo trip forwards
+  Nav "nav follow $($base.Substring($base.LastIndexOf('/') + 1)) forward" 2 | Out-Null
   Shot "navigate" "route" "open Navigate" 4
   Nav "nav stop" 1 | Out-Null
+  Nav "gps live" 2 | Out-Null
   Nav "home" 1 | Out-Null
   foreach ($e in "gpx", "csv", "json") { Nav "sd rm $base.$e" 2 | Out-Null }
 }
