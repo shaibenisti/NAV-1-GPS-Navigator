@@ -16,8 +16,8 @@
 
 #define FW_VERSION_MAJOR 0
 #define FW_VERSION_MINOR 7
-#define FW_VERSION_PATCH 3
-#define FW_VERSION       "0.7.3"
+#define FW_VERSION_PATCH 4
+#define FW_VERSION       "0.7.4"
 
 #if __has_include("build_info.h")
 #include "build_info.h"

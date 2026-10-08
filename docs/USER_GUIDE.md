@@ -14,7 +14,7 @@ The screen is used in portrait. Swipe left / right on the home screen for the se
 |---|---|
 | **GPS** | *Position*: coordinates, accuracy, altitude, speed, heading and the fix state (dimmed when the last position is old). *Satellites*: one bar per satellite, coloured by whether it is used in the fix. *Details*: time, date, fix type, time to first fix, GPS module status. |
 | **Map** | The offline street map. Your position is the blue marker; the map follows you. **+ / −** zoom, **N / ↑** switch between north up and heading up, drag the map to look around and tap the GPS button to come back. The orange line is the trip being recorded. |
-| **Trips** | *Record*: start / stop a trip, live distance, speed and time. *Trips*: saved trips; open one for its distance, duration, speed, a route preview and **Show on map**. *Totals*: all trips together. |
+| **Trips** | *Record*: start / stop a trip, live distance, speed and time. *Trips*: saved trips; open one for its distance, duration, speed, a route preview and **Show on map**. The red bin at the end of a row deletes that trip, *Delete all trips* under the list deletes every trip (each asks for a second tap). *Totals*: all trips together. |
 | **Compass** | Heading while you are moving (from the GPS course — there is no magnetic sensor, so it needs movement, about 3 km/h). The dial turns so that your direction of travel is always up. |
 | **Phone** | A QR code that opens the NAV-1 web page on your phone, with the address under it. |
 | **Files** | Browse the SD card, view text files, delete files and folders. |

@@ -26,6 +26,7 @@ int Storage::list(const char *dir, Entry *out, int max, int *total) { return car
 bool Storage::usage(uint64_t &totalBytes, uint64_t &freeBytes) { return cardPresent() && s_sd->usage(totalBytes, freeBytes); }
 bool Storage::inUse(const char *path) { return !cardPresent() || s_sd->inUse(path); }
 bool Storage::removeStart(const char *path) { return cardPresent() && s_sd->removeStart(path); }
+bool Storage::exists(const char *path) { return cardPresent() && s_sd->exists(path); }
 bool Storage::removing() { return cardPresent() && s_sd->removing(); }
 uint32_t Storage::removedCount() { return s_sd ? s_sd->removedCount() : 0; }
 bool Storage::removeFailed() { return s_sd && s_sd->removeFailed(); }

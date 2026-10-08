@@ -20,6 +20,7 @@ namespace Storage {
   int list(const char *dir, Entry *out, int max, int *total = nullptr);   // unsorted, -1 = no folder
   bool usage(uint64_t &totalBytes, uint64_t &freeBytes);
   bool inUse(const char *path);          // being written (GPS session, trip)
+  bool exists(const char *path);
   bool removeStart(const char *path);    // background delete (file or folder tree)
   bool removing();
   uint32_t removedCount();

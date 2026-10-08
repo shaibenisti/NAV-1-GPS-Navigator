@@ -16,6 +16,7 @@
 #include "../services/TripRecorder.h"
 #include "../services/Location.h"
 #include "../services/Navigator.h"
+#include "../services/Storage.h"
 
 namespace {
 
@@ -24,6 +25,7 @@ const char *const PAGE_NAME[P_COUNT] = { LV_SYMBOL_PLAY "  Record", LV_SYMBOL_LI
 int s_page = P_RECORD;
 int s_openTrip = -1;                     // console: open this trip's detail on the next create()
 
+constexpr int DEL_W = 84;                // small delete button at the end of a list row
 constexpr int MAX_TRIPS = 40, ROUTE_PTS = 400, ROUTE_W = 436, ROUTE_H = 230;
 constexpr uint32_t C_GO = 0x2E7D32, C_STOP = 0xC62828, C_OK = 0x66BB6A, C_WAIT = 0xFFB300, C_ROUTE = 0x4FC3F7;
 
@@ -31,12 +33,18 @@ struct Ui {
   lv_obj_t *menu[P_COUNT] = {}, *page[P_COUNT] = {};
   lv_obj_t *recState = nullptr, *btn = nullptr, *btnLbl = nullptr, *recInfo = nullptr, *value[6] = {};
   lv_obj_t *tripsTitle = nullptr, *tripsCount = nullptr, *list = nullptr, *detail = nullptr, *back = nullptr;
+  lv_obj_t *delBtn = nullptr, *delLbl = nullptr;
   lv_obj_t *total[6] = {};
   bool wasRecording = false, listPending = false;
 };
 Ui s_ui;
 TripRecorder::Summary *s_trips = nullptr;   // PSRAM while the app is open (MAX_TRIPS)
 int s_tripCount = 0;
+int s_delArmed = -1;                            // list index whose delete button was tapped once (-1 none)
+bool s_delFailed = false, s_delWide = false;    // a file could not be deleted / the armed button is the wide one
+bool s_delAll = false;                          // deleting the whole /data/trips folder
+int s_delStep = -1;                             // -1 idle, 0..2 deleting .gpx / .csv / .json, 3 finished
+String s_delBase;
 lv_point_precise_t *s_route = nullptr;   // points of the drawn route (PSRAM, kept while shown)
 
 lv_obj_t *label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text = "") {
@@ -133,6 +141,8 @@ void freeRoute() {
 
 void closeDetail() {
   if (s_ui.detail) { lv_obj_delete(s_ui.detail); s_ui.detail = nullptr; }
+  s_ui.delBtn = s_ui.delLbl = nullptr;
+  s_delArmed = -1;
   freeRoute();
   lv_obj_set_hidden(s_ui.list, false);
   lv_obj_set_hidden(s_ui.back, true);
@@ -197,6 +207,75 @@ void onFollow(lv_event_t *e) {
   const int i = (int)(intptr_t)lv_event_get_user_data(e);
   if (i < 0 || i >= s_tripCount) return;
   if (Navigator::follow(s_trips[i].base, s_trips[i].title.c_str())) Shell::switchApp("Navigate");
+}
+
+// Delete: the three files of the trip, one background delete after the other (.json last,
+// so a trip that could not be deleted completely stays in the list).
+// Starts the delete of the next existing file from s_delStep on; false = nothing left or cannot start
+// (s_delFailed tells which).
+bool startDeleteStep() {
+  static const char *const EXT[3] = { ".gpx", ".csv", ".json" };
+  for (; s_delStep < 3; s_delStep++) {
+    const String path = s_delBase + EXT[s_delStep];
+    if (!Storage::exists(path.c_str())) continue;
+    if (Storage::removeStart(path.c_str())) return true;
+    s_delFailed = true;
+    return false;
+  }
+  return false;
+}
+
+// Delete buttons: a small one (icon only) at the end of each list row, and a wide "Delete all trips"
+// under the list (index DEL_ALL). Both arm on the first tap and delete on the second.
+enum DelText { DEL_IDLE, DEL_ARMED, DEL_BUSY, DEL_FAILED };
+constexpr int DEL_ALL = 999;
+void setDelText(lv_obj_t *lbl, bool wide, DelText t) {
+  if (!lbl) return;
+  static const char *const WIDE[4] = { LV_SYMBOL_TRASH "  Delete all trips", LV_SYMBOL_TRASH "  Tap again: delete ALL trips",
+                                       "Deleting...", "Could not delete (recording?) - retry" };
+  static const char *const SMALL[4] = { LV_SYMBOL_TRASH, "Sure?", "...", "Failed" };
+  lv_label_set_text(lbl, wide ? WIDE[t] : SMALL[t]);
+}
+
+void onDelete(lv_event_t *e) {
+  const int i = (int)(intptr_t)lv_event_get_user_data(e);
+  if (i < 0 || (i >= s_tripCount && i != DEL_ALL) || s_delStep >= 0) return;
+  lv_obj_t *btn = lv_event_get_target_obj(e);
+  if (s_delArmed != i) {                                         // first tap arms, the second deletes
+    if (s_delArmed >= 0) setDelText(s_ui.delLbl, s_delWide, DEL_IDLE);   // another one was armed: disarm it
+    s_delArmed = i;
+    s_ui.delBtn = btn;
+    s_ui.delLbl = lv_obj_get_child(btn, 0);
+    s_delWide = lv_obj_get_width(btn) > 200;
+    setDelText(s_ui.delLbl, s_delWide, DEL_ARMED);
+    return;
+  }
+  s_delAll = i == DEL_ALL;
+  if (!s_delAll) s_delBase = s_trips[i].base;
+  s_delStep = 0;
+  s_delFailed = false;
+  lv_obj_add_state(s_ui.delBtn, LV_STATE_DISABLED);
+  setDelText(s_ui.delLbl, s_delWide, DEL_BUSY);
+  if (s_delAll) {                                                // the whole folder in one background delete
+    if (!Storage::removeStart("/data/trips")) { s_delFailed = true; s_delStep = 3; }   // refused while a trip is recorded
+  } else if (!startDeleteStep()) s_delStep = 3;                  // lets updateDelete() report
+}
+
+// Called by update(): one file after the other until all are gone.
+void updateDelete() {
+  if (s_delStep < 0 || Storage::removing()) return;
+  if (s_delAll && s_delStep < 3) s_delFailed = Storage::removeFailed();
+  else if (s_delStep < 3) {                                      // the file of this step is finished
+    if (Storage::removeFailed()) s_delFailed = true;
+    else { s_delStep++; if (startDeleteStep()) return; }
+  }
+  s_delStep = -1;
+  if (!s_delFailed) { if (s_ui.detail) closeDetail(); rebuildList(); }
+  else if (s_ui.delLbl) {                                        // still the same screen: say so, allow a retry
+    s_delArmed = -1;
+    lv_obj_remove_state(s_ui.delBtn, LV_STATE_DISABLED);
+    setDelText(s_ui.delLbl, s_delWide, DEL_FAILED);
+  }
 }
 
 void openDetail(int i) {
@@ -305,19 +384,39 @@ void updateTotals() {
 void rebuildList() {
   s_tripCount = s_trips ? TripRecorder::list(s_trips, MAX_TRIPS) : 0;
   lv_obj_clean(s_ui.list);
+  s_ui.delBtn = s_ui.delLbl = nullptr;
+  s_delArmed = -1;
   lv_label_set_text_fmt(s_ui.tripsCount, "%d %s", s_tripCount, s_tripCount == 1 ? "trip" : "trips");
   if (!s_tripCount) label(s_ui.list, &lv_font_montserrat_20, lv_color_hex(0xBBBBBB), "No trips yet. Start one on the Record page.");
   for (int i = 0; i < s_tripCount; i++) {
     const TripRecorder::Summary &t = s_trips[i];
-    lv_obj_t *b = lv_button_create(s_ui.list);
-    lv_obj_set_size(b, lv_pct(100), 60);
+    lv_obj_t *row = lv_obj_create(s_ui.list);                    // trip button + small delete button
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, lv_pct(100), 60);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_t *b = lv_button_create(row);
+    lv_obj_set_size(b, Apps::PAGE_INNER_W - DEL_W - 8, 60);
     lv_obj_add_event_cb(b, onTrip, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    lv_obj_t *db = lv_button_create(row);
+    lv_obj_set_size(db, DEL_W, 60);
+    lv_obj_align(db, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(db, lv_color_hex(C_STOP), 0);
+    lv_obj_center(label(db, &lv_font_montserrat_20, lv_color_white(), LV_SYMBOL_TRASH));
+    lv_obj_add_event_cb(db, onDelete, LV_EVENT_CLICKED, (void *)(intptr_t)i);
     lv_obj_t *a = label(b, &lv_font_montserrat_20, lv_color_white(), t.title.c_str());
     lv_obj_align(a, LV_ALIGN_TOP_LEFT, 0, -6);
     char s[80];
     snprintf(s, sizeof(s), "%.2f km   %s   max %.0f km/h", t.distanceKm, hms(t.durationS).c_str(), t.maxKmh);
     lv_obj_align(label(b, &lv_font_montserrat_14, lv_color_hex(0xE0E0E0), s), LV_ALIGN_BOTTOM_LEFT, 0, 6);
     lv_obj_align(label(b, &lv_font_montserrat_20, lv_color_white(), LV_SYMBOL_RIGHT), LV_ALIGN_RIGHT_MID, 0, 0);
+  }
+  if (s_tripCount) {                                             // wide "delete all" at the very end
+    lv_obj_t *all = lv_button_create(s_ui.list);
+    lv_obj_set_size(all, lv_pct(100), 56);
+    lv_obj_set_style_bg_color(all, lv_color_hex(C_STOP), 0);
+    lv_obj_center(label(all, &lv_font_montserrat_20, lv_color_white(), ""));
+    setDelText(lv_obj_get_child(all, 0), true, DEL_IDLE);
+    lv_obj_add_event_cb(all, onDelete, LV_EVENT_CLICKED, (void *)(intptr_t)DEL_ALL);
   }
   updateTotals();
 }
@@ -350,6 +449,7 @@ void update() {
   static uint32_t last = 0;
   if (millis() - last < 500) return;
   last = millis();
+  updateDelete();
   if (s_page == P_RECORD) updateRecord();
   const bool rec = TripRecorder::recording();
   if (s_ui.wasRecording && !rec) s_ui.listPending = true;      // a trip was just stopped ...
@@ -361,6 +461,8 @@ void update() {
 }
 
 void destroy() {
+  s_delStep = -1;
+  s_delArmed = -1;
   freeRoute();
   freeTrips();
   s_ui = Ui();
