@@ -47,18 +47,20 @@ The LCD scans two 8-row **bounce buffers** in internal RAM; the esp_lcd driver r
 
 **Portrait.** The panel is 800 × 480, the UI is 480 × 800. LVGL renders 16-row strips in *partial* mode into a small internal-RAM buffer; the flush callback rotates each strip into the hidden panel framebuffer (16-row blocks so the source stays in the data cache and the destination is written in whole cache lines). LVGL's sync callback copies the areas the hidden buffer is missing from the shown one. Rotating inside the refill interrupt was measured and rejected — it needs more time than the refill has. Measured costs: an app opens in ≈ 0.4 s, a full-screen frame takes ≈ 0.2 s, and the refill timing stays clean (no refill later than 0.6 ms in repeated runs).
 
-**Memory strategy.** Internal RAM is the scarce resource and is reserved for the radios, DMA buffers and task stacks; everything else (LVGL's heap, framebuffers, tiles, images, the map's working arrays, the web server's transfer buffer, app lists) lives in PSRAM. Of the 512 KB of internal SRAM, 64 KB are the caches, 131 KB code kept in IRAM and 71 KB static data; the heap is 253 KB. Measured on the device (`diag mem`, v0.7.1):
+**Memory strategy.** Internal RAM is the scarce resource and is reserved for the radios, DMA buffers and task stacks; everything else (LVGL's heap, framebuffers, tiles, images, the map's working arrays, the web server's transfer buffer, app lists) lives in PSRAM. Of the 512 KB of internal SRAM, 64 KB are the caches, 131 KB code kept in IRAM and 71 KB static data; the heap is 253 KB. Measured on the device (`diag mem`, v0.7.2):
 
 | State | Internal free | Largest block |
 |---|---|---|
-| Idle after boot (Wi-Fi and Bluetooth off) | 158 KB | 115 KB |
-| Map open | 153 KB | 111 KB |
-| Wi-Fi connected | 92 KB | 51 KB |
-| Wi-Fi, web page and map tiles served, Map open | 77 KB (lowest 64) | 31 KB |
-| Wi-Fi + Bluetooth | 46 KB | 30 KB |
-| Wi-Fi + Bluetooth + Map + web load + Wi-Fi scan | 35 KB (lowest 12) | 23 KB |
+| Idle after boot (Wi-Fi and Bluetooth off) | 166 KB | 123 KB |
+| Map open | 165 KB | 123 KB |
+| Wi-Fi connected | 107 KB | 67 KB |
+| Wi-Fi, web page and map tiles served, Map open | 104 KB (lowest 98) | 63 KB |
+| Wi-Fi + hotspot | 100 KB | 55 KB |
+| Wi-Fi + hotspot + Bluetooth | 54 KB | 30 KB |
+| Wi-Fi + Bluetooth | 61 KB | 30 KB |
+| Wi-Fi + Bluetooth + Map + web load + Wi-Fi scan | 58 KB (lowest 51) | 30 KB |
 
-Wi-Fi takes ~66 KB when it connects (driver buffers, the web server task); switched off it gives back all but ~27 KB (kept by the driver, the same on every on/off cycle). Bluetooth takes ~45 KB and keeps it until the next restart (deinit / re-init is not reliable at runtime). The display path takes 46 KB (bounce buffers 25.6 KB, LVGL's render strip 15 KB), the SD writer 15 KB. The ESP-IDF configuration (`idf/sdkconfig.defaults`) uses a 32 KB instruction cache, Wi-Fi and lwIP code in IRAM and the NimBLE host in PSRAM, which keeps the screen refill and the Wi-Fi throughput both healthy; Bluetooth refuses to start below 80 KB of free internal RAM instead of crashing (with Wi-Fi connected there is enough since 0.7.1; with the hotspot on as well there may not be).
+Wi-Fi takes ~60 KB when it connects (driver, the web server task); switched off it gives back all but ~24 KB (kept by the driver, the same on every on/off cycle). Bluetooth takes ~45 KB and keeps it until the next restart (deinit / re-init is not reliable at runtime). The display path takes 46 KB (bounce buffers 25.6 KB, LVGL's render strip 15 KB), the SD writer 15 KB. The ESP-IDF configuration (`idf/sdkconfig.defaults`) uses a 32 KB instruction cache, Wi-Fi and lwIP code in IRAM and the NimBLE host in PSRAM, which keeps the screen refill and the Wi-Fi throughput both healthy. Since 0.7.2 the Wi-Fi driver and lwIP allocate their working memory (packet buffers, sockets) from PSRAM first (`SPIRAM_TRY_ALLOCATE_WIFI_LWIP`), and every `malloc` of 1 KB or more may go to PSRAM (`SPIRAM_MALLOC_ALWAYSINTERNAL` 1024, was 4096); DMA buffers and task stacks still come from internal RAM, which they request explicitly. Under web load with Bluetooth on, the lowest free internal RAM went from 12 KB to 51 KB; downloads from the device stay at ~0.5 MB/s (~0.25 MB/s with Bluetooth on, the radios share the antenna). Note: the Arduino Wi-Fi library sets its own buffer counts at start (dynamic TX buffers, 4 static RX buffers), so the `ESP_WIFI_*_BUFFER_NUM` values in sdkconfig are not the ones in use. Bluetooth refuses to start below 80 KB of free internal RAM instead of crashing.
 
 **Tasks.** Core 1: Arduino `loop()` (shell, LVGL, services). Core 0: touch sampling (events queued for LVGL), the SD writer, Wi-Fi / BLE stacks, the web server, and the map renderer while the Map app is open.
 

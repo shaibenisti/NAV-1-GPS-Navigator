@@ -32,7 +32,7 @@ or the browser flasher (Chrome / Edge) on the project's GitHub Pages site, or `p
 ```powershell
 .\idf-build.ps1                      # compile → idf\build\NAV1.bin
 .\idf-build.ps1 -Upload              # compile + flash (COM3; -Port COM5 to change)
-.\idf-build.ps1 -Upload -OutDir archive\v0.7.1   # also keep the binaries and sdkconfig
+.\idf-build.ps1 -Upload -OutDir archive\v0.7.2   # also keep the binaries and sdkconfig
 .\idf-build.ps1 -Menuconfig          # browse system settings (copy changes into idf\sdkconfig.defaults)
 ```
 
