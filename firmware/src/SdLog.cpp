@@ -2,6 +2,7 @@
 
 #include <SPI.h>
 #include <SD.h>
+#include <Preferences.h>
 #include <esp_heap_caps.h>
 #include <freertos/task.h>
 #include <dirent.h>
@@ -91,37 +92,94 @@ uint8_t SdLog::wakeUpCard() {
 }
 // ---- session files ----------------------------------------------------------
 
+// Next session number: kept in NVS and claimed at boot, the files are then created by the writer task once the boot
+// is done - creating a file means searching the whole directory, ~250 ms per search at ~590 sessions (1.0 s of a
+// 1.76 s boot, 2026-10-08). Without a number in NVS (first boot, NVS wiped) or without a writer task: the
+// highest existing Snnnn + 1 from ONE pass over the directory, files created right away.
+// (Probing S0001, S0002, ... took ~15 ms per existing session: 2.9 s at 178 sessions, 2026-09-28.)
 bool SdLog::openSession(const char *dir) {
   if (!_mounted) return false;
+  strlcpy(_dir, dir, sizeof(_dir));
+  int next = 0;
+  Preferences nvs;
+  if (nvs.begin("sdlog", false)) {
+    next = (int)nvs.getUInt("next", 0);
+    if (next > 0 && next <= 9999) nvs.putUInt("next", next + 1);   // claimed now: a failed open only skips a number
+    nvs.end();
+  }
+  if (next > 0 && next <= 9999) {
+    _sessionN = next;
+    snprintf(_session, sizeof(_session), "S%04d", next);
+    _openPending = true;
+    _lastFlush = millis();
+    return true;
+  }
   if (!SD.exists(dir) && !SD.mkdir(dir)) { _errors++; return false; }
+  _scanned = true;
+  return createSessionFiles(scanNextNumber(), false);
+}
 
-  // Next free session number = highest existing Snnnn + 1, from ONE pass over the directory.
-  // (Probing S0001, S0002, ... with SD.exists() took ~15 ms per existing session: 2.9 s of the
-  // boot at 178 sessions, growing with every boot - found 2026-09-28.)
-  // POSIX readdir() only reads directory entries (File::openNextFile() opens every file: slower).
+// POSIX readdir() only reads directory entries (File::openNextFile() opens every file: slower).
+int SdLog::scanNextNumber() {
   int maxN = 0;
-  if (DIR *d = opendir((String("/sd") + dir).c_str())) {
+  if (DIR *d = opendir((String("/sd") + _dir).c_str())) {
     while (struct dirent *e = readdir(d)) {
       if (e->d_name[0] == 'S' && isdigit((unsigned char)e->d_name[1])) maxN = max(maxN, atoi(e->d_name + 1));
     }
     closedir(d);
   }
+  return maxN + 1;
+}
 
-  char csvPath[32], nmeaPath[32];
-  for (int n = maxN + 1; n <= 9999; n++) {
-    snprintf(csvPath, sizeof(csvPath), "%s/S%04d.CSV", dir, n);
-    if (SD.exists(csvPath)) continue;                  // (normally the first try)
-    snprintf(nmeaPath, sizeof(nmeaPath), "%s/S%04d.NMEA", dir, n);
+// First free number from `from` (knownFree: `from` was just checked), files created, NVS updated
+bool SdLog::createSessionFiles(int from, bool knownFree) {
+  char csvPath[48], nmeaPath[48];
+  for (int n = from; n <= 9999; n++) {
+    snprintf(csvPath, sizeof(csvPath), "%s/S%04d.CSV", _dir, n);
+    if (!(knownFree && n == from) && SD.exists(csvPath)) continue;   // (normally the first try)
+    snprintf(nmeaPath, sizeof(nmeaPath), "%s/S%04d.NMEA", _dir, n);
     snprintf(_session, sizeof(_session), "S%04d", n);
+    _sessionN = n;
     _csv  = SD.open(csvPath, FILE_WRITE);
     _nmea = SD.open(nmeaPath, FILE_WRITE);
     if (!_csv || !_nmea) { _errors++; return false; }
+    _logging = true;
+    Preferences nvs;
+    if (nvs.begin("sdlog", false)) { nvs.putUInt("next", n + 1); nvs.end(); }
     _lastFlush = millis();
     return true;
   }
   _errors++;
   return false;
 }
+
+// The session claimed from NVS: create its files (writer task after the boot, or openNow())
+void SdLog::openPending() {
+  if (!_openPending) return;
+  const uint32_t t0 = millis();
+  lockCard();
+  bool ok = SD.exists(_dir) || SD.mkdir(_dir);
+  if (ok) {
+    char csvPath[48];
+    snprintf(csvPath, sizeof(csvPath), "%s/S%04d.CSV", _dir, _sessionN);
+    if (SD.exists(csvPath)) {                          // the number in NVS is not this card's next one
+      _scanned = true;
+      ok = createSessionFiles(scanNextNumber(), false);
+    } else {
+      ok = createSessionFiles(_sessionN, true);
+    }
+  } else {
+    _errors++;
+  }
+  unlockCard();
+  _openPending = false;
+  _openMs = millis() - t0;
+  Serial.printf("[SD] session files %s/%s %s in %u ms%s\n", _dir, _session, ok ? "created" : "NOT created", (unsigned)_openMs,
+                _scanned ? " (number from a directory pass)" : "");
+}
+
+void SdLog::openNow() { openPending(); }
+void SdLog::bootDone() { _bootDone = true; }
 
 void SdLog::line(const char *text) {
   if (_writer) {                               // same bytes as println(): text + CR LF
@@ -138,7 +196,7 @@ void SdLog::line(const char *text) {
 }
 
 size_t SdLog::NmeaSink::write(uint8_t c) {
-  if (!_owner._nmea) return 0;
+  if (!_owner.logging()) return 0;
   _buf[_len++] = c;
   if (_len == sizeof(_buf)) drain();
   return 1;
@@ -152,17 +210,19 @@ void SdLog::NmeaSink::drain() {
     _len = 0;
     return;
   }
-  if (!_owner._nmea) return;
+  if (!_owner._nmea) { _len = 0; return; }       // files not created (yet): nothing to write to
   _owner.writeNmea(_buf, _len);
   _len = 0;
 }
 
 void SdLog::writeNmea(const uint8_t *data, size_t n) {
+  if (!_nmea) { _dropped += n; return; }
   if (_nmea.write(data, n) != n) _errors++;
   else _nmeaBytes += n;
 }
 
 void SdLog::writeCsv(const uint8_t *data, size_t n) {
+  if (!_csv) { _dropped += n; return; }
   if (_csv.write(data, n) != n) _errors++;
 }
 
@@ -473,6 +533,11 @@ void SdLog::writerTask(void *self) { static_cast<SdLog *>(self)->writerLoop(); }
 
 void SdLog::writerLoop() {
   static uint8_t chunk[1024];
+  if (_openPending) {                          // the session files: once the boot is done (data waits in the buffers)
+    const uint32_t t0 = millis();
+    while (!_bootDone && millis() - t0 < 5000) vTaskDelay(pdMS_TO_TICKS(20));
+    openPending();
+  }
   uint32_t lastFlush = millis();
   for (;;) {
     size_t n = xStreamBufferReceive(_nmeaStream, chunk, sizeof(chunk), pdMS_TO_TICKS(100));
@@ -485,8 +550,8 @@ void SdLog::writerLoop() {
     writeAuxRecords();
     if (millis() - lastFlush >= _flushMs) {
       lastFlush = millis();
-      _csv.flush();
-      _nmea.flush();
+      if (_csv) _csv.flush();
+      if (_nmea) _nmea.flush();
       for (File &f : _aux) if (f) f.flush();
     }
     unlockCard();

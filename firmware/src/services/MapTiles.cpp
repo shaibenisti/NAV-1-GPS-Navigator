@@ -215,15 +215,21 @@ bool MapTiles::get(int z, int x, int y, Buf &out) {
     if (e.run > 0) {                                   // a tile (or a run of the same tile)
       if (tid >= (uint64_t)e.id + e.run) return true;
       if (!grow(s_raw, e.len)) return false;
+      const uint32_t r0 = micros();
       if (!readAt(s_dataOff + e.off, s_raw.p, e.len)) return false;
+      const uint32_t r1 = micros();
       if (!gunzip(s_raw.p, e.len, out)) return false;
+      s_stats.readUsSum += r1 - r0;
+      s_stats.inflateUsSum += micros() - r1;
       s_stats.tiles++;
       s_stats.tileMsSum += millis() - t0;
       return true;
     }
     if (s_leaf.srcOff != e.off) {                      // leaf directory pointer
       s_leaf.srcOff = UINT32_MAX;
+      const uint32_t d0 = micros();
       if (!loadDir(s_leafOff + e.off, e.len, s_leaf)) return false;
+      s_stats.dirUsSum += micros() - d0;
       s_leaf.srcOff = e.off;
     }
     d = &s_leaf;

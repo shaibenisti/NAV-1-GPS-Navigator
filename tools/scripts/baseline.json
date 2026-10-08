@@ -1,23 +1,23 @@
 {
   "_comment": "Expected NAV-1 measurements for validate.ps1 drift checks. 'worse' = direction that is a regression. A change smaller than min_abs is ignored; otherwise warn_pct / fail_pct of the baseline value. Refresh values with: validate.ps1 -UpdateBaseline (thresholds are kept).",
-  "firmware": "v0.7.2",
+  "firmware": "v0.7.3",
   "metrics": {
     "boot_ms": {
-      "value": 1745,
+      "value": 442,
       "worse": "up",
       "min_abs": 300,
       "warn_pct": 25,
       "fail_pct": 60
     },
     "app_open_ms": {
-      "value": 713.0,
+      "value": 771.0,
       "worse": "up",
       "min_abs": 60,
       "warn_pct": 30,
       "fail_pct": 80
     },
     "home_ms": {
-      "value": 196.0,
+      "value": 199.0,
       "worse": "up",
       "min_abs": 60,
       "warn_pct": 50,
@@ -31,7 +31,7 @@
       "fail_pct": 60
     },
     "loop_stall_ms": {
-      "value": 3,
+      "value": 4,
       "worse": "up",
       "min_abs": 25,
       "warn_pct": 300,
@@ -59,7 +59,7 @@
       "fail_pct": 40
     },
     "firmware_kb": {
-      "value": 2087.0,
+      "value": 2091.0,
       "worse": "up",
       "min_abs": 64,
       "warn_pct": 10,

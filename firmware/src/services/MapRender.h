@@ -28,8 +28,10 @@ namespace MapRender {
   void request(const Req &r);
   bool poll(const uint16_t **frame, Req *rendered);   // true once per finished frame (image valid until the next poll)
 
-  struct Status { bool busy; bool mapOk; const char *error; uint32_t lastMs, lastTiles, frames, stackFree, labelMs, labels; };
+  struct Status { bool busy; bool mapOk; const char *error; uint32_t lastMs, lastTiles, frames, stackFree, labelMs, labels, tilesMs, clearMs, sleeps,
+                 cacheKB, cacheHits, cacheMisses, lastMisses; };
   Status status();
+  void tune(int slicePx, int featN);             // measurements: sleep every slicePx pixels / featN features (-1 = keep)
 
   // Track overlay (the recording trip): drawn on every frame until cleared. n <= 600; copied.
   void setTrack(const float *lat, const float *lon, int n);

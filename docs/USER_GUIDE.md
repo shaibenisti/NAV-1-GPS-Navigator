@@ -3,7 +3,7 @@
 ## First start
 
 1. Format a microSD card as **FAT32** and insert it (the slot is on the right side of the case). NAV-1 works without a card, but then it cannot record trips or show the map.
-2. Plug in USB-C power (a power bank is fine). The device boots in about 2 seconds.
+2. Plug in USB-C power (a power bank is fine). The device is ready in about half a second.
 3. Take it outside. The GPS module has no backup battery, so after every power-up it needs a few minutes with a clear view of the sky for its first fix. The status bar shows `no fix 2/9 sat` until then and `FIX 8/12 sat` afterwards.
 
 The screen is used in portrait. Swipe left / right on the home screen for the second page of apps; **Home** at the top left of every app returns.

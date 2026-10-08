@@ -597,6 +597,17 @@ void mapAppCommand(const char *arg) {
   if (!strcmp(arg, "up")) { s_headingUp = true; s_follow = true; Apps::setText(s_ui.modeLbl, LV_SYMBOL_UP); }
   else if (!strcmp(arg, "north")) { s_headingUp = false; Apps::setText(s_ui.modeLbl, "N"); }
   else if (!strncmp(arg, "zoom ", 5)) s_zoomIdx = constrain(atoi(arg + 5), 0, N_ZOOM - 1);
+  else if (!strncmp(arg, "view ", 5)) {                         // "map view <lat> <lon>": centre there (north up, not following)
+    double lat, lon;
+    if (sscanf(arg + 5, "%lf %lf", &lat, &lon) != 2) return;
+    s_vLat = lat; s_vLon = lon; s_haveView = true; s_follow = false; s_headingUp = false;
+  } else if (!strncmp(arg, "pan ", 4)) {                        // "map pan <dx> <dy>": what a drag by (dx, dy) pixels does
+    int dx, dy;
+    if (sscanf(arg + 4, "%d %d", &dx, &dy) != 2 || !s_haveShown || s_shown.headingUp) return;
+    double lon, lat;
+    MapRender::positionAt(s_shown, -dx, -dy, lon, lat);
+    s_vLon = lon; s_vLat = lat; s_haveView = true; s_follow = false;
+  }
   requestRender();
 }
 

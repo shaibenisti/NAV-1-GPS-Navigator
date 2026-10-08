@@ -1,3 +1,4 @@
+#include <Preferences.h>
 #include "Shell.h"
 
 #include <esp_heap_caps.h>
@@ -571,6 +572,14 @@ void handleLine(const char *cmd) {
     if (sscanf(cmd + 10, "%lf %lf", &lat, &lon) != 2) { Serial.println("[UI] usage: map place <lat> <lon>"); return; }
     mapAppShowPlace(lat, lon);
     if (lv_screen_active() == s_home) openApp(Apps::indexOf("Map")); else Shell::switchApp("Map");
+  } else if (strncmp(cmd, "sdnext ", 7) == 0) {     // sdnext <n>: the session number the next boot claims (tests)
+    Preferences nvs;
+    if (nvs.begin("sdlog", false)) { nvs.putUInt("next", (uint32_t)atoi(cmd + 7)); nvs.end(); }
+    Serial.printf("[SD] next session number %d (after a reset)\n", atoi(cmd + 7));
+  } else if (strncmp(cmd, "map tune ", 9) == 0) {   // map tune <pixels> <features>: render throttle (measurements)
+    int px = -1, fe = -1;
+    sscanf(cmd + 9, "%d %d", &px, &fe);
+    MapRender::tune(px, fe);
   } else if (strncmp(cmd, "map ", 4) == 0) {
     mapAppCommand(cmd + 4);
   } else if (strcmp(cmd, "map") == 0) {
@@ -580,6 +589,11 @@ void handleLine(const char *cmd) {
                   m.mapOk ? (m.busy ? "rendering" : "idle") : "closed", (unsigned)m.lastMs, (unsigned)m.lastTiles, (unsigned)m.labelMs, (unsigned)m.labels, (unsigned)m.frames,
                   (unsigned)m.stackFree, m.error, (unsigned)t.tiles, t.tiles ? (unsigned)(t.tileMsSum / t.tiles) : 0, (unsigned)t.dirReads,
                   (unsigned)(t.bytesRead >> 10));
+    Serial.printf("[MAP] last render: clear %u ms, get + index %u tiles (%u from the card) %u ms, draw %u ms, labels %u ms, %u one-tick sleeps | since open: card read %u ms, inflate %u ms, directories %u ms; tile cache %u KB, %u hits, %u misses\n",
+                  (unsigned)m.clearMs, (unsigned)m.lastTiles, (unsigned)m.lastMisses, (unsigned)m.tilesMs,
+                  (unsigned)(m.lastMs > m.clearMs + m.tilesMs + m.labelMs ? m.lastMs - m.clearMs - m.tilesMs - m.labelMs : 0), (unsigned)m.labelMs, (unsigned)m.sleeps,
+                  (unsigned)(t.readUsSum / 1000), (unsigned)(t.inflateUsSum / 1000), (unsigned)(t.dirUsSum / 1000),
+                  (unsigned)m.cacheKB, (unsigned)m.cacheHits, (unsigned)m.cacheMisses);
   } else if (strcmp(cmd, "races") == 0) {
     Serial.printf("[FL] vsync races since boot: %u (handled)\n", (unsigned)Health::totals().vsyncRaces);
   } else if (strncmp(cmd, "pulse ", 6) == 0) {
@@ -674,6 +688,8 @@ void diagPump() {
 
 // ---- public ---------------------------------------------------------------------------------------
 
+extern uint32_t g_setupStartMs;                    // NAV1.ino: millis() when setup() started
+
 static void heapCheck(const char *where) {
   const bool ok = heap_caps_check_integrity(MALLOC_CAP_INTERNAL, true);
   Serial.printf("[SHELL] heap integrity after %-12s: %s (internal free %u KB)\n", where, ok ? "OK" : "CORRUPT",
@@ -714,11 +730,17 @@ void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {
   ph[2] = millis();
 
   const SdLog::Pins pins = { SD_CS_PIN, SD_MOSI_PIN, SD_SCK_PIN, SD_MISO_PIN };
-  if (s_sd.begin(pins, SD_SPI_HZ) && s_sd.openSession(SD_LOG_DIR)) {
+  uint32_t sdT[4] = { millis(), 0, 0, 0 };    // SD phase: mount, session files, writer task, then images
+  const bool sdMounted = s_sd.begin(pins, SD_SPI_HZ);
+  sdT[1] = millis();
+  const bool sdSession = sdMounted && s_sd.openSession(SD_LOG_DIR);
+  sdT[2] = millis();
+  if (sdSession) {
+    const bool writer = s_sd.startWriter(SD_FLUSH_MS, SD_WRITER_CORE, SD_WRITER_PRIO);   // card I/O off the UI loop
+    if (!writer) s_sd.openNow();                                     // session files from NVS's number: create them here
     link.setRawEcho(&s_sd.nmeaSink());
     s_sd.line("# NAV-1 " FW_VERSION " session (" FW_GIT_DESCRIBE ")");
     s_sd.line(GpsCsv::header());
-    const bool writer = s_sd.startWriter(SD_FLUSH_MS, SD_WRITER_CORE, SD_WRITER_PRIO);   // card I/O off the UI loop
     Serial.printf("[SHELL] SD logging to %s/%s (mount attempts %d, wake-up %s, R1=0x%02X), writer task %s\n", SD_LOG_DIR,
                   s_sd.sessionName(), s_sd.mountAttempts(), s_sd.wakeUpUsed() ? "used" : "no", s_sd.wakeUpR1(),
                   writer ? "ON" : "FAILED (writes in loop)");
@@ -726,9 +748,13 @@ void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {
     Serial.printf("[SHELL] SD NOT logging: mounted=%d attempts=%d wake_up=%s (last CMD0 R1=0x%02X) errors=%u\n", s_sd.mounted(),
                   s_sd.mountAttempts(), s_sd.wakeUpUsed() ? "used" : "no", s_sd.wakeUpR1(), (unsigned)s_sd.writeErrors());
   }
+  sdT[3] = millis();
   applyAssets();
   heapCheck("sd");
   ph[3] = millis();
+  Serial.printf("[SHELL] SD phase (ms): mount %u, session files %u (number from %s), writer %u, images %u\n", (unsigned)(sdT[1] - sdT[0]),
+                (unsigned)(sdT[2] - sdT[1]), s_sd.sessionScanned() ? "a directory pass" : "NVS", (unsigned)(sdT[3] - sdT[2]),
+                (unsigned)(ph[3] - sdT[3]));
 
   Location::begin(link, parser);
   Storage::begin(s_sd);
@@ -755,10 +781,11 @@ void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {
   WebService::begin(s_sd);                // starts serving once Wi-Fi is connected
   Ota::begin();                           // new firmware from an update: verify, else rollback
   ph[6] = millis();
-  Serial.printf("[SHELL] boot phases (ms): before shell %u, LVGL+touch %u, UI %u, SD %u, Wi-Fi %u, BLE %u, recorders %u\n",
-                (unsigned)ph[0], (unsigned)(ph[1] - ph[0]), (unsigned)(ph[2] - ph[1]), (unsigned)(ph[3] - ph[2]),
+  Serial.printf("[SHELL] boot phases (ms): start-up %u, setup %u, LVGL+touch %u, UI %u, SD %u, Wi-Fi %u, BLE %u, recorders %u\n",
+                (unsigned)g_setupStartMs, (unsigned)(ph[0] - g_setupStartMs), (unsigned)(ph[1] - ph[0]), (unsigned)(ph[2] - ph[1]), (unsigned)(ph[3] - ph[2]),
                 (unsigned)(ph[4] - ph[3]), (unsigned)(ph[5] - ph[4]), (unsigned)(ph[6] - ph[5]));
   Diag::setBootMs(millis());
+  s_sd.bootDone();                        // the SD writer creates this session's files now (UI already up)
   Serial.printf("[SHELL] ready in %u ms: Wi-Fi %s%s, BLE %s '%s'. Serial: help\n", (unsigned)millis(),
                 WifiService::stateName(WifiService::state()),
                 WifiService::hasSavedNetwork() ? (" -> '" + WifiService::ssid() + "'").c_str() : "",

@@ -39,7 +39,7 @@ the enclosure — is in this repository.
 
 All screens: **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
-**Status:** version 0.7.2 — navigation (go to / back-track), places and the Drive dashboard (0.7.0); a Hebrew on-screen keyboard and 34 KB more free internal RAM, enough for Wi-Fi and Bluetooth together (0.7.1); the Wi-Fi stack's working memory in PSRAM, so even under web load with Bluetooth on 50 KB stay free (0.7.2). Ideas that fit the hardware and are not built yet: speed and signal alerts, trip statistics, a satellite layer on the device's own map, a quick portrait / landscape switch.
+**Status:** version 0.7.3 — navigation (go to / back-track), places and the Drive dashboard (0.7.0); a Hebrew on-screen keyboard and 34 KB more free internal RAM, enough for Wi-Fi and Bluetooth together (0.7.1); the Wi-Fi stack's working memory in PSRAM, so even under web load with Bluetooth on 50 KB stay free (0.7.2); ready in 0.45 s instead of 1.8 s, and the map ~2.5x faster to pan and zoom thanks to a tile cache (0.7.3). Ideas that fit the hardware and are not built yet: speed and signal alerts, trip statistics, a satellite layer on the device's own map, a quick portrait / landscape switch.
 
 ## Install it (no build tools needed)
 
@@ -50,7 +50,7 @@ Ready-made firmware is in [`docs/firmware`](docs/firmware). Connect the board wi
 | **In the browser** (Chrome / Edge) | Open the **web flasher**: <https://shaibenisti.github.io/NAV-1-GPS-Navigator/> and press *Install*. |
 | **PowerShell** (Windows) | `.\flash.ps1` — finds the board, installs `esptool` if needed, flashes in about 30 seconds. |
 | **Terminal** (macOS / Linux) | `./flash.sh` |
-| **Any tool** | Write [`docs/firmware/NAV1-v0.7.2-full.bin`](docs/firmware/NAV1-v0.7.2-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
+| **Any tool** | Write [`docs/firmware/NAV1-v0.7.3-full.bin`](docs/firmware/NAV1-v0.7.3-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
 
 Then insert a **FAT32 microSD card** and, if you want the street map, put it on the card:
 

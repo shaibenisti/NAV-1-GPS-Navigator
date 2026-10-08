@@ -22,7 +22,7 @@ namespace MapTiles {
   bool get(int z, int x, int y, Buf &out);
   void release(Buf &b);              // free the buffer
 
-  struct Stats { uint32_t tiles, tileMsSum, dirReads, bytesRead; int maxZoom; };
+  struct Stats { uint32_t tiles, tileMsSum, dirReads, bytesRead; int maxZoom; uint32_t readUsSum, inflateUsSum, dirUsSum; };
   Stats stats();
   const char *lastError();
 }

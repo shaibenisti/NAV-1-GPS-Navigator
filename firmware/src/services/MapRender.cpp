@@ -6,6 +6,7 @@
 #include <freertos/task.h>
 #include <freertos/idf_additions.h>
 #include <math.h>
+#include <new>
 #include <stdlib.h>
 #include <string.h>
 #include "MapFont.h"
@@ -65,12 +66,21 @@ MapRender::Req s_readyReq;
 MapRender::Req s_want;
 volatile bool s_haveWant = false, s_busy = false, s_run = false, s_taskDone = true, s_mapOk = false;
 const char *s_err = "";
-uint32_t s_lastMs = 0, s_lastTiles = 0, s_frames = 0, s_seq = 0, s_labelMs = 0, s_labels = 0;
+uint32_t s_lastMisses = 0;
+uint32_t s_lastMs = 0, s_lastTiles = 0, s_frames = 0, s_seq = 0, s_labelMs = 0, s_labels = 0, s_tilesMs = 0, s_clearMs = 0;
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t s_task = nullptr;
 char s_path[48] = "";
 
-Tile *s_tiles = nullptr;
+// Tile cache (PSRAM): tiles stay read, inflated and indexed between frames - a pan or a zoom step at the same tile
+// zoom (15 .. 17.5 all use zoom-15 tiles) draws without touching the card. Least recently used tiles go first
+// once the cache holds more than CACHE_BYTES; the tiles of the frame being drawn are never evicted.
+constexpr int CACHE_N = 32;
+constexpr size_t CACHE_BYTES = 2u * 1024 * 1024;
+struct Slot { Tile t; int z = -1; uint32_t used = 0; size_t bytes = 0; bool valid = false, empty = false, inUse = false; };
+Slot *s_cache = nullptr;
+uint32_t s_clock = 0, s_hits = 0, s_misses = 0;
+Tile *s_use[MAX_TILES] = {};                // the tiles of the frame being drawn
 float *s_sx = nullptr, *s_sy = nullptr;
 int *s_ring = nullptr;
 Edge *s_edges = nullptr;
@@ -86,9 +96,10 @@ int s_rtN = 0;
 MapRender::Pin *s_pins = nullptr, *s_pinCopy = nullptr; // PSRAM (begin)
 int s_pinN = 0;
 
-// Feature loops (indexing, decoding off-screen geometry) read lots of PSRAM without drawing: sleep a tick every 192.
-int s_ticks = 0;
-inline void featTick() { if (++s_ticks >= 96) { s_ticks = 0; vTaskDelay(1); } }
+// Feature loops (indexing, decoding off-screen geometry) read lots of PSRAM without drawing: sleep a tick every s_featN.
+int s_ticks = 0, s_featN = 192;
+uint32_t s_sleeps = 0;                     // one-tick sleeps in the last render (throttle + featTick)
+inline void featTick() { if (s_featN && ++s_ticks >= s_featN) { s_ticks = 0; s_sleeps++; vTaskDelay(1); } }
 
 void *ps(size_t n) { return heap_caps_calloc(1, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
 // Big scratch arrays are not zeroed: a 1 MB memset of PSRAM in one go delays the screen refill
@@ -224,6 +235,83 @@ void freeTile(Tile &t) {
   MapTiles::release(t.buf);
 }
 
+bool indexTile(Tile &t);
+
+size_t tileBytes(const Tile &t) {
+  size_t n = t.buf.cap;
+  for (const LayerIdx *l : { &t.earth, &t.landuse, &t.landcover, &t.water, &t.buildings, &t.roads, &t.places })
+    n += l->n * sizeof(Feat) + l->nVals * 2 * sizeof(uint32_t);
+  return n;
+}
+
+void dropSlot(Slot &s) {
+  freeTile(s.t);
+  s.t = Tile();
+  s.valid = s.empty = s.inUse = false;
+  s.z = -1;
+  s.bytes = 0;
+}
+
+size_t cacheBytes() {
+  size_t n = 0;
+  for (int i = 0; i < CACHE_N; i++) n += s_cache[i].bytes;
+  return n;
+}
+
+// Least recently used slot not in the current frame (nullptr: all in use)
+Slot *lruSlot(bool validOnly) {
+  Slot *best = nullptr;
+  for (int i = 0; i < CACHE_N; i++) {
+    Slot &s = s_cache[i];
+    if (s.inUse || (validOnly && !s.valid)) continue;
+    if (!s.valid) return &s;
+    if (!best || s.used < best->used) best = &s;
+  }
+  return best;
+}
+
+void trimCache(size_t limit) {
+  while (cacheBytes() > limit) {
+    Slot *s = lruSlot(true);
+    if (!s) break;
+    dropSlot(*s);
+  }
+}
+
+// The tile (read + indexed), from the cache or the card. nullptr: no tile there (sea, outside the map) or an error (s_err).
+Tile *cachedTile(int z, int x, int y) {
+  for (int i = 0; i < CACHE_N; i++) {
+    Slot &s = s_cache[i];
+    if (s.valid && s.z == z && s.t.tx == x && s.t.ty == y) {
+      s.used = ++s_clock;
+      s.inUse = true;
+      s_hits++;
+      return s.empty ? nullptr : &s.t;
+    }
+  }
+  s_misses++;
+  trimCache(CACHE_BYTES);
+  Slot *s = lruSlot(false);
+  if (!s) { s_err = "tile cache full"; return nullptr; }
+  if (s->valid) dropSlot(*s);
+  s->t.tx = x; s->t.ty = y;
+  if (!MapTiles::get(z, x, y, s->t.buf)) { s_err = MapTiles::lastError(); dropSlot(*s); return nullptr; }
+  if (s->t.buf.len && !indexTile(s->t)) { s_err = "bad tile"; dropSlot(*s); return nullptr; }
+  s->z = z;
+  s->valid = true;
+  s->inUse = true;
+  s->used = ++s_clock;
+  s->empty = s->t.buf.len == 0;
+  if (s->empty) MapTiles::release(s->t.buf);
+  s->bytes = tileBytes(s->t);
+  return s->empty ? nullptr : &s->t;
+}
+
+void endFrame() {
+  for (int i = 0; i < CACHE_N; i++) s_cache[i].inUse = false;
+  trimCache(CACHE_BYTES);
+}
+
 bool indexTile(Tile &t) {
   const uint8_t *b = t.buf.p;
   const size_t n = t.buf.len;
@@ -311,11 +399,15 @@ uint16_t *s_cv = nullptr;                              // canvas being drawn
 
 // Long runs of PSRAM writes from this core delay the screen refill (late refills = a one-frame smear):
 // every WORK_SLICE pixels the task sleeps one tick.
-constexpr int WORK_SLICE = 1500;
+// Measured 2026-10-08, the same 12 renders twice each (zoom 13-17, pans): 1500 px / 96 features (before) - a pan at zoom 16
+// 1.77 s, refills >= 0.6 ms late in 1 of 4828 frames (worst +0.85 ms); 6000 / 192 - 0.93 s, 3 of 3415 frames (worst
+// +1.75 ms); no sleeps at all - a refill 1.8 ms late within 4 renders. A late refill is a one-frame smear at the left
+// edge. "map tune <pixels> <features>" changes both at run time (0 = no sleeps).
+int s_slice = 6000;
 int s_work = 0;
 inline void throttle(int px) {
   s_work += px;
-  if (s_work >= WORK_SLICE) { s_work = 0; vTaskDelay(1); }
+  if (s_slice && s_work >= s_slice) { s_work = 0; s_sleeps++; vTaskDelay(1); }
 }
 
 inline void span(int y, int xa, int xb, uint16_t c) {
@@ -706,7 +798,7 @@ void drawLabels(float zoom, const View *views, int nt) {
   uint32_t hash;
   // place names first: they have priority over street names
   for (int i = 0; i < nt; i++) {
-    const Tile &t = s_tiles[i];
+    const Tile &t = *s_use[i];
     for (uint32_t q = 0; q < t.places.n && s_nBox < MAX_BOX; q++) {
       featTick();
       const Feat &f = t.places.f[q];
@@ -728,7 +820,7 @@ void drawLabels(float zoom, const View *views, int nt) {
   const int minKind = zoom < 14.5f ? R_MAJOR : (zoom < 15.5f ? R_MEDIUM : R_MINOR);
   for (int pass = 0; pass < 2; pass++) {                                          // bigger roads first
     for (int i = 0; i < nt; i++) {
-      const Tile &t = s_tiles[i];
+      const Tile &t = *s_use[i];
       for (uint32_t q = 0; q < t.roads.n && s_nBox < MAX_BOX; q++) {
         featTick();
         const Feat &f = t.roads.f[q];
@@ -770,20 +862,22 @@ bool renderFrame(const MapRender::Req &rq) {
   s_wantBuildings = zoom >= 15.0f;
 
   s_cv = s_img[s_back];
+  s_sleeps = 0;
+  const uint32_t tc = millis();
   for (int y = 0; y < H; y++) { uint16_t *row = s_cv + y * W; for (int x = 0; x < W; x++) row[x] = C_BG; throttle(W); }
+  s_clearMs = millis() - tc;
+  const uint32_t tt = millis();
   int nt = 0;
+  const uint32_t miss0 = s_misses;
   for (int ty = ty0; ty <= ty1; ty++)
     for (int tx = tx0; tx <= tx1; tx++) {
-      Tile &t = s_tiles[nt];
-      t.tx = tx; t.ty = ty;
-      if (!MapTiles::get(tz, tx, ty, t.buf)) { s_err = MapTiles::lastError(); }
-      else if (t.buf.len) {
-        if (indexTile(t)) nt++;
-        else s_err = "bad tile";
-      }
-      if (aborted()) { for (int i = 0; i <= nt && i < MAX_TILES; i++) freeTile(s_tiles[i]); return false; }   // superseded / closing
-      vTaskDelay(1);
+      const uint32_t m0 = s_misses;
+      if (Tile *t = cachedTile(tz, tx, ty)) s_use[nt++] = t;
+      if (aborted()) { endFrame(); return false; }   // superseded / closing (the tiles read so far stay cached)
+      if (s_misses != m0) vTaskDelay(1);
     }
+  s_lastMisses = s_misses - miss0;
+  s_tilesMs = millis() - tt;
   const float sc = fmaxf(0.6f, powf(2.0f, zoom - 15.5f));
   auto view = [&](const Tile &t) {
     const float k = scale / 4096.0f;
@@ -795,19 +889,19 @@ bool renderFrame(const MapRender::Req &rq) {
     return v;
   };
 
-  for (int i = 0; i < nt; i++) drawPolys(s_tiles[i], s_tiles[i].earth, view(s_tiles[i]), 0);
-  for (int i = 0; i < nt; i++) { drawPolys(s_tiles[i], s_tiles[i].landcover, view(s_tiles[i]), 1); drawPolys(s_tiles[i], s_tiles[i].landuse, view(s_tiles[i]), 1); }
-  for (int i = 0; i < nt; i++) { drawPolys(s_tiles[i], s_tiles[i].water, view(s_tiles[i]), 2); drawWaterLines(s_tiles[i], view(s_tiles[i]), sc); }
+  for (int i = 0; i < nt; i++) drawPolys((*s_use[i]), (*s_use[i]).earth, view((*s_use[i])), 0);
+  for (int i = 0; i < nt; i++) { drawPolys((*s_use[i]), (*s_use[i]).landcover, view((*s_use[i])), 1); drawPolys((*s_use[i]), (*s_use[i]).landuse, view((*s_use[i])), 1); }
+  for (int i = 0; i < nt; i++) { drawPolys((*s_use[i]), (*s_use[i]).water, view((*s_use[i])), 2); drawWaterLines((*s_use[i]), view((*s_use[i])), sc); }
   vTaskDelay(1);
-  if (aborted()) { for (int i = 0; i < nt; i++) freeTile(s_tiles[i]); return false; }
-  if (zoom >= 15.0f) for (int i = 0; i < nt; i++) drawPolys(s_tiles[i], s_tiles[i].buildings, view(s_tiles[i]), 3);
+  if (aborted()) { endFrame(); return false; }
+  if (zoom >= 15.0f) for (int i = 0; i < nt; i++) drawPolys((*s_use[i]), (*s_use[i]).buildings, view((*s_use[i])), 3);
   vTaskDelay(1);
   for (int ki = 0; ki < R_COUNT; ki++) {
     const int kind = ROAD_ORDER[ki];
     for (int casing = 1; casing >= 0; casing--)
-      for (int i = 0; i < nt; i++) drawRoads(s_tiles[i], view(s_tiles[i]), kind, casing, sc);
+      for (int i = 0; i < nt; i++) drawRoads((*s_use[i]), view((*s_use[i])), kind, casing, sc);
     vTaskDelay(1);
-    if (aborted()) { for (int i = 0; i < nt; i++) freeTile(s_tiles[i]); return false; }
+    if (aborted()) { endFrame(); return false; }
   }
   // overlays: the route being followed (cyan), then the recording trip (orange) on top
   auto overlay = [&](const float *srcLat, const float *srcLon, const int &srcN, float *copy, float wd, uint16_t col) {
@@ -831,7 +925,7 @@ bool renderFrame(const MapRender::Req &rq) {
   overlay(s_trkLat, s_trkLon, s_trkN, s_trkCopy, 6.0f, rgb(255, 87, 34));
   if (!aborted()) {
     View views[MAX_TILES];
-    for (int i = 0; i < nt; i++) views[i] = view(s_tiles[i]);
+    for (int i = 0; i < nt; i++) views[i] = view((*s_use[i]));
     const uint32_t tl = millis();
     s_nBox = s_nName = 0;
     // pins (saved places, the destination) first: their names have priority over the map's
@@ -854,7 +948,7 @@ bool renderFrame(const MapRender::Req &rq) {
     s_labels = s_nBox;
   }
   s_lastTiles = nt;
-  for (int i = 0; i < nt; i++) freeTile(s_tiles[i]);
+  endFrame();
   return true;
 }
 
@@ -896,7 +990,9 @@ bool MapRender::begin(const char *path) {
   s_mapOk = false;
   s_img[0] = (uint16_t *)heap_caps_malloc(W * H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   s_img[1] = (uint16_t *)heap_caps_malloc(W * H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  s_tiles = (Tile *)ps(sizeof(Tile) * MAX_TILES);
+  s_cache = (Slot *)heap_caps_malloc(sizeof(Slot) * CACHE_N, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (s_cache) for (int i = 0; i < CACHE_N; i++) new (&s_cache[i]) Slot();
+  s_hits = s_misses = 0;
   s_sx = (float *)psRaw(sizeof(float) * MAX_PTS); s_sy = (float *)psRaw(sizeof(float) * MAX_PTS);
   s_ring = (int *)ps(sizeof(int) * (MAX_RINGS + 1));
   s_edges = (Edge *)psRaw(sizeof(Edge) * MAX_EDGES);
@@ -918,7 +1014,7 @@ bool MapRender::begin(const char *path) {
   s_nameHash = (uint32_t *)ps(sizeof(uint32_t) * MAX_BOX);
   s_pinCopy = s_pins ? s_pins + MAX_PINS : nullptr;
   s_pinN = 0;
-  if (!s_rtLat || !s_pins || !s_box || !s_namePos || !s_nameHash || !s_img[0] || !s_img[1] || !s_tiles || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
+  if (!s_rtLat || !s_pins || !s_box || !s_namePos || !s_nameHash || !s_img[0] || !s_img[1] || !s_cache || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
     s_err = "out of memory";
     end();
     return false;
@@ -939,8 +1035,8 @@ void MapRender::end() {
   s_run = false;
   for (int i = 0; i < 200 && !s_taskDone; i++) vTaskDelay(pdMS_TO_TICKS(50));   // up to 10 s: a frame may be running
   if (s_task) { vTaskDeleteWithCaps(s_task); s_task = nullptr; }
-  if (s_tiles) { for (int i = 0; i < MAX_TILES; i++) freeTile(s_tiles[i]); }
-  void **all[] = { (void **)&s_img[0], (void **)&s_img[1], (void **)&s_tiles, (void **)&s_sx, (void **)&s_sy, (void **)&s_ring,
+  if (s_cache) { for (int i = 0; i < CACHE_N; i++) dropSlot(s_cache[i]); heap_caps_free(s_cache); s_cache = nullptr; }
+  void **all[] = { (void **)&s_img[0], (void **)&s_img[1], (void **)&s_sx, (void **)&s_sy, (void **)&s_ring,
                    (void **)&s_edges, (void **)&s_act, (void **)&s_xs, (void **)&s_tmpFeat, (void **)&s_tmpVal, (void **)&s_trkLat,
                    (void **)&s_rtLat, (void **)&s_pins, (void **)&s_box, (void **)&s_namePos, (void **)&s_nameHash };
   for (void **p : all) { if (*p) heap_caps_free(*p); *p = nullptr; }
@@ -977,7 +1073,14 @@ bool MapRender::poll(const uint16_t **frame, Req *rendered) {
 
 MapRender::Status MapRender::status() {
   return { s_busy || s_haveWant, s_mapOk, s_err, s_lastMs, s_lastTiles, s_frames,
-           s_task ? (uint32_t)uxTaskGetStackHighWaterMark(s_task) : 0, s_labelMs, s_labels };
+           s_task ? (uint32_t)uxTaskGetStackHighWaterMark(s_task) : 0, s_labelMs, s_labels, s_tilesMs, s_clearMs, s_sleeps,
+           s_cache ? (uint32_t)(cacheBytes() >> 10) : 0, s_hits, s_misses, s_lastMisses };
+}
+
+void MapRender::tune(int slicePx, int featN) {
+  if (slicePx >= 0) s_slice = slicePx;
+  if (featN >= 0) s_featN = featN;
+  Serial.printf("[MAP] tune: sleep a tick every %d pixels drawn, every %d features\n", s_slice, s_featN);
 }
 
 void MapRender::setTrack(const float *lat, const float *lon, int n) {

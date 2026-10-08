@@ -35,6 +35,9 @@ public:
   // line()/nmeaSink() never block afterwards; data that doesn't fit the RAM buffers
   // (card stalled for many seconds) is dropped and counted.
   bool startWriter(uint32_t flushMs, int core, int priority);
+  void bootDone();                            // the writer may now create the session files (card busy ~0.3 s per file)
+  void openNow();                             // no writer task: create them now
+  uint32_t sessionOpenMs() const { return _openMs; }
 
   // --- auxiliary files (e.g. the trip files), up to AUX_FILES open ---
   // Writer mode: open, lines and close are all queued and done by the writer task, in order,
@@ -100,10 +103,11 @@ public:
 
   // --- status (for screens / logs) ---
   bool mounted() const { return _mounted; }
-  bool logging() const { return _csv && _nmea; }
+  bool logging() const { return _logging || _openPending; }   // pending: the writer creates the files after the boot
   const char *sessionName() const { return _session; }   // "S0003" or ""
   int mountAttempts() const { return _attempts; }
   bool wakeUpUsed() const { return _wakeUsed; }
+  bool sessionScanned() const { return _scanned; }   // the session number came from a directory pass (not NVS)
   uint8_t wakeUpR1() const { return _wakeR1; }             // last CMD0 reply (0x01 = ok, 0xFF = silent)
   uint32_t csvLines() const { return _csvLines; }
   uint32_t nmeaBytes() const { return _nmeaBytes; }
@@ -125,6 +129,9 @@ private:
   };
 
   uint8_t wakeUpCard();
+  int scanNextNumber();
+  bool createSessionFiles(int from, bool knownFree);
+  void openPending();
   void flushAll();
   void writeCsv(const uint8_t *data, size_t n);
   void writeNmea(const uint8_t *data, size_t n);
@@ -136,6 +143,12 @@ private:
   Pins _pins = {};
   bool _mounted = false;
   bool _wakeUsed = false;
+  bool _scanned = false;
+  volatile bool _openPending = false, _bootDone = false;
+  volatile bool _logging = false;              // both session files open (a flag: _csv / _nmea change in the writer task)
+  int _sessionN = 0;
+  uint32_t _openMs = 0;
+  char _dir[16] = "";
   uint8_t _wakeR1 = 0;
   int _attempts = 0;
   uint64_t _cardMB = 0;

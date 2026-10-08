@@ -41,11 +41,13 @@ static void printStatus() {
   Serial.println();
 }
 
+uint32_t g_setupStartMs = 0;                       // Shell's boot phase line: time before setup() (start-up, PSRAM test)
+
 void setup() {
+  g_setupStartMs = millis();
   Serial.setTxBufferSize(CONSOLE_TX_BUFFER);   // before begin(): prints no longer stall the UI loop
   Serial.setRxBufferSize(4096);                // "sd put" uploads arrive in 32-line (~3 KB) blocks
-  Serial.begin(CONSOLE_BAUD);
-  delay(300);
+  Serial.begin(CONSOLE_BAUD);                  // (UART0: the PC keeps the port open across a reset, nothing to wait for)
   printBootReport();
   bool selfTestOk = true;
 #if GPS_PARSER_SELFTEST
