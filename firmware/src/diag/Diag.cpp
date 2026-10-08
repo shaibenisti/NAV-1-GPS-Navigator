@@ -22,6 +22,9 @@
 #include "../services/Ota.h"
 #include "../services/Backlight.h"
 #include "../services/GpsConfig.h"
+#include "../services/Places.h"
+#include "../services/Navigator.h"
+#include "../services/Odometer.h"
 #include <esp_app_desc.h>
 #include "../../config.h"
 
@@ -616,6 +619,8 @@ bool Diag::command(const char *line, Print &o) {
     o.println("[HELP] trip start|stop|status|list   gps replay <file.NMEA> [speed] | gps live (replay a recorded session) | gps profile [factory|galileo] | gps ubxtest | gps ubx");
     o.println("[HELP] sd ls [dir] | sd cat <path> | sd dir [dir] | sd df | sd rm <path> | sd put <path> <size> (sdput.ps1)");
     o.println("[HELP] ota arm|disarm|status|reject   (firmware update over Wi-Fi: tools/scripts/ota.ps1)");
+    o.println("[HELP] place list | place add <lat> <lon> \"name\" | place rename <i> \"name\" | place rm <i> | place go <i>");
+    o.println("[HELP] nav [status] | nav goto <lat> <lon> [\"name\"] | nav follow <trip name> [back|forward] | nav reverse | nav stop");
     return true;
   }
   if (cmd == "diag") { print(o, nextArg(p).c_str()); return true; }
@@ -647,6 +652,69 @@ bool Diag::command(const char *line, Print &o) {
       o.printf("[WIFI] hotspot %s\n", Settings::hotspotEnabled() ? "on" : "off");
     }
     else print(o, "wifi");
+    return true;
+  }
+  if (cmd == "place") {
+    const String sub = nextArg(p);
+    if (sub == "add") {
+      const double lat = nextArg(p).toDouble(), lon = nextArg(p).toDouble();
+      String name = nextArg(p);
+      if (!name.length()) name = Places::defaultName();
+      const int i = Places::add(name.c_str(), lat, lon);
+      if (i >= 0) o.printf("[PLACE] added %d '%s' %.7f %.7f\n", i, name.c_str(), lat, lon);
+      else o.println("[PLACE] cannot add (list full, bad name or position)");
+    } else if (sub == "rename") {
+      const int i = nextArg(p).toInt();
+      const String name = nextArg(p);
+      o.printf("[PLACE] rename %d: %s\n", i, Places::rename(i, name.c_str()) ? "ok" : "FAILED");
+    } else if (sub == "rm") {
+      const int i = nextArg(p).toInt();
+      o.printf("[PLACE] rm %d: %s\n", i, Places::remove(i) ? "ok" : "FAILED");
+    } else if (sub == "go") {
+      Places::Place pl;
+      if (Places::get(nextArg(p).toInt(), pl) && Navigator::goTo(pl.name, pl.lat, pl.lon)) o.printf("[NAV] going to '%s'\n", pl.name);
+      else o.println("[NAV] no such place");
+    } else if (sub == "file") {
+      o.printf("[PLACE] %s, in sync %s\n", Places::status().c_str(), Places::fileInSync() ? "yes" : "no");
+    } else {
+      for (int i = 0; i < Places::count(); i++) {
+        Places::Place pl;
+        Places::get(i, pl);
+        o.printf("[PLACE] %2d %.7f %.7f %s\n", i, pl.lat, pl.lon, pl.name);
+      }
+      o.printf("[PLACE] list end (%d) - %s\n", Places::count(), Places::status().c_str());
+    }
+    return true;
+  }
+  if (cmd == "nav") {
+    const String sub = nextArg(p);
+    if (sub == "goto") {
+      const double lat = nextArg(p).toDouble(), lon = nextArg(p).toDouble();
+      const String name = nextArg(p);
+      o.printf("[NAV] goto: %s\n", Navigator::goTo(name.length() ? name.c_str() : "Destination", lat, lon) ? "ok" : "bad position");
+    } else if (sub == "follow") {
+      String base = nextArg(p), title = base;
+      const String dir = nextArg(p);
+      if (!base.startsWith("/")) {                     // a trip name (trip list), else a base path
+        TripRecorder::Summary *trips = new TripRecorder::Summary[20];
+        const int n = TripRecorder::list(trips, 20);
+        for (int i = 0; i < n; i++) if (trips[i].name == base) { base = trips[i].base; title = trips[i].title; }
+        delete[] trips;
+      }
+      const bool ok = Navigator::follow(base, title.c_str(), dir == "back", dir != "forward" && dir != "back");
+      o.printf("[NAV] follow %s: %s\n", base.c_str(), ok ? "ok" : "no track (a name from 'trip list' or a base path)");
+    } else if (sub == "reverse") {
+      Navigator::reverse();
+    } else if (sub == "stop") {
+      Navigator::stop();
+      o.println("[NAV] stopped");
+    }
+    const Navigator::Status st = Navigator::status();
+    if (!Navigator::active()) o.println("[NAV] off");
+    else o.printf("[NAV] %s '%s' fix=%d dist=%.0f m bearing=%.0f off=%.0f m progress=%.2f eta=%lu s%s%s\n", Navigator::modeName(), st.name, st.fix,
+                  st.distM, st.bearingDeg, st.offM, st.progress, (unsigned long)st.etaS, st.arrived ? " ARRIVED" : "", st.offRoute ? " OFF-ROUTE" : "");
+    o.printf("[ODO] %.3f km, moving %lu s, max %.1f km/h, avg %.1f km/h\n", Odometer::distanceKm(), (unsigned long)Odometer::movingS(),
+             Odometer::maxKmh(), Odometer::avgKmh());
     return true;
   }
   if (cmd == "trip") {

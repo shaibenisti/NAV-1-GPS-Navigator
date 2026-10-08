@@ -25,18 +25,21 @@ the enclosure — is in this repository.
 
 | | |
 |---|---|
-| **Offline street map** | A vector map of a whole country from one file on the SD card, drawn on the device by its own renderer, with street and place names in Hebrew. Follows your position (north up or heading up), drag to look around, zoom 13–17.5, scale bar, your recorded trip drawn on top. |
+| **Offline street map** | A vector map of a whole country from one file on the SD card, drawn on the device by its own renderer, with street and place names in Hebrew. Follows your position (north up or heading up), drag to look around, zoom 13–17.5, scale bar, your recorded trip drawn on top, saved places as pins. Long press a point to save it or to go there. |
+| **Navigation** | *Go to* a saved place, a point on the map or one sent from the phone: a big arrow, distance, arrival time, and a line on the map. *Follow* a recorded trip — standing at its end, NAV-1 leads you back to its start (back-track) and warns when you leave the route. Straight-line guidance; there is no road routing on the device. |
+| **Places** | Save the current position under a name (home, the car, a spring), up to 50; sorted by distance with direction. Kept in `/data/places.json` on the card; Hebrew names from the phone. |
+| **Drive** | A dashboard to read at a glance: big speed, clock, trip computer (distance, moving time, average, top speed), altitude, heading, the navigation arrow, and one-tap trip recording. |
 | **Trip recorder** | One tap to record. Every trip is saved as GPX + CSV with a summary; list, totals, a route preview and *Show on map*. GPX downloads to a phone over Wi-Fi. |
 | **GPS** | Position, speed, heading, altitude, accuracy, a satellite chart (GPS + Galileo, signal per satellite) and fix details. The GPS module is configured by NAV-1 itself at every start. |
 | **Compass** | Heading from the GPS course while you move, as a heading-up dial with speed and altitude. |
-| **Phone link** | The device serves a web page (live location, trips, offline map) over Wi-Fi or its own hotspot; a QR code on the screen opens it. A Bluetooth LE service publishes status and location. |
+| **Phone link** | The device serves a web page (live location, trips, places, navigation, offline map) over Wi-Fi or its own hotspot; a QR code on the screen opens it. Pick a point on the phone's map and send it to NAV-1 as a place or a destination. A Bluetooth LE service publishes status and location. |
 | **Files / Storage** | Browse and delete SD files, see what uses the card, keep the newest GPS logs. |
 | **Settings** | Wi-Fi (on-screen keyboard), hotspot, Bluetooth, brightness and auto-dim, time zone. Optional `settings.json`, icons and wallpaper from the SD card. |
 | **Updates** | Install new firmware over Wi-Fi; the new image verifies itself and rolls back automatically if it does not run correctly. |
 
 All screens: **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
-**Status:** version 0.6.0 is in daily use. Three tiles on the second home page (Alerts, Notes, Messages) are placeholders that say "Coming soon". Ideas that fit the hardware and are not built yet: speed and signal alerts, notes with the on-screen keyboard, trip statistics, a satellite layer on the device's own map, a quick portrait / landscape switch.
+**Status:** version 0.7.0 — navigation (go to / back-track), places and the Drive dashboard on top of the 0.6.0 base that is in daily use. Ideas that fit the hardware and are not built yet: speed and signal alerts, trip statistics, a satellite layer on the device's own map, a quick portrait / landscape switch.
 
 ## Install it (no build tools needed)
 
@@ -47,7 +50,7 @@ Ready-made firmware is in [`docs/firmware`](docs/firmware). Connect the board wi
 | **In the browser** (Chrome / Edge) | Open the **web flasher**: <https://shaibenisti.github.io/NAV-1-GPS-Navigator/> and press *Install*. |
 | **PowerShell** (Windows) | `.\flash.ps1` — finds the board, installs `esptool` if needed, flashes in about 30 seconds. |
 | **Terminal** (macOS / Linux) | `./flash.sh` |
-| **Any tool** | Write [`docs/firmware/NAV1-v0.6.0-full.bin`](docs/firmware/NAV1-v0.6.0-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
+| **Any tool** | Write [`docs/firmware/NAV1-v0.7.0-full.bin`](docs/firmware/NAV1-v0.7.0-full.bin) to flash offset `0x0` (ESP32-S3, 16 MB, DIO, 80 MHz). |
 
 Then insert a **FAT32 microSD card** and, if you want the street map, put it on the card:
 

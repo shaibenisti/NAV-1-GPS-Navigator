@@ -4,12 +4,14 @@ NAV-1 is a small operating system for one device: a shell that hosts apps, a set
 
 ```
  ┌───────────────────────────── apps (firmware/src/apps) ─────────────────────────────┐
- │ GPS · Compass · Map · Trips · Phone · Files · Storage · Settings · Tools           │
+ │ GPS · Compass · Map · Navigate · Places · Drive · Trips · Phone · Files · Storage  │
+ │ Settings · Tools                                                                   │
  └───────────────▲──────────────────────────────▲──────────────────────────▲──────────┘
                  │ read state / call services    │ LVGL objects              │ lifecycle
  ┌───────────────┴───────────────┐   ┌──────────┴─────────┐   ┌─────────────┴─────────┐
  │ services (firmware/src/services)│  │ ui + display path  │   │ shell                 │
  │ Location · TripRecorder · Map*  │  │ LVGL 9, transitions│   │ launcher, status bar, │
+ │ Places · Navigator · Odometer   │  │ Hebrew UI text     │   │ toasts                │
  │ Wifi · Web · Ble · Ota · Time   │  │ RgbPanel, TouchPort│   │ app host, console     │
  │ Storage · Settings · GpsConfig  │  └──────────▲─────────┘   └───────────────────────┘
  └───────────────▲───────────────┘             │
@@ -28,10 +30,13 @@ NAV-1 is a small operating system for one device: a shell that hosts apps, a set
 | `GpsLink`, `GpsParser`, `Location` | UART → NMEA sentences with checksum and link statistics → `GpsData`; `Location::snapshot()` applies the fix rule and is what every app reads |
 | `GpsConfig` | Configures the GPS module over UBX at every start (GPS + Galileo, NMEA 4.1), verified and reverted on failure |
 | `TripRecorder` | Samples a trip once per second (a point when moved ≥ 3 m or every 10 s), writes GPX / CSV / JSON summary, survives a reset |
+| `Places` | Up to 50 saved points in PSRAM, mirrored to `/data/places.json` (written in the background ~1 s after a change; a hand-edited file is read at start-up) |
+| `Navigator` | Guidance to a point (straight line) or along a recorded trip (nearest point on the route, a look-ahead point 40 m further for the arrow, off-route at 45 m with hysteresis, arrival at 25 m); ETA from the smoothed speed; events for the shell's toasts; resumed after a reset (NVS) |
+| `Odometer` | The Drive dashboard's trip computer (distance, moving time, top speed since its reset), RAM only |
 | `SdLog` | SD session logging (NMEA + CSV per boot) through a writer task; card access is serialized by one mutex; recovery of interrupted writes |
 | `Storage` | Read access to the card for the apps: listing, usage, background delete and statistics, a second long-lived file handle for the map |
 | `MapTiles`, `MapRender` | The offline map (below) |
-| `WifiService`, `WebService` | Station and access point, mDNS, the web page and its JSON API, GPX/CSV download, static files and range requests for the phone map |
+| `WifiService`, `WebService` | Station and access point, mDNS, the web page and its JSON API (status, location, trips, places, navigation), GPX/CSV download, static files and range requests for the phone map. Commands from the phone (add / delete a place, go to, stop) are handed to the UI loop through one slot and answered once it ran them |
 | `BleService` | NimBLE GATT service: status, location (1 Hz notify), command / response |
 | `Ota` | Firmware update over Wi-Fi with an image check and automatic rollback |
 | `Settings`, `TimeService`, `Backlight`, `Assets` | NVS settings mirrored to an editable `settings.json`; clock from GPS or NTP with time zones; PWM brightness and auto-dim; optional icons / wallpaper from the card |
@@ -56,13 +61,20 @@ The LCD scans two 8-row **bounce buffers** in internal RAM; the esp_lcd driver r
 
 Typical cost with labels: 4 tiles (zoom 15.5–16) ≈ 2 s, 9–12 tiles (zoom 13–14) ≈ 4–6 s, ≈ 2 MB of PSRAM while the Map app is open, nothing when it is closed. A readable Python prototype of the same algorithm is in `tools/scripts/mvtlib.py` and `maprender.py`.
 
+**Navigation overlays.** The route being followed (`setRoute`, cyan) is drawn under the recording trip (`setTrack`, orange). Saved places and the destination are pins (`setPins`): a round head on a stem, the name above it with the same fonts and halo as the map labels; they are placed before the street names, so names keep off them. The Map app adds, as LVGL objects, the line from the position to a "go to" destination and the navigation chip.
+
 The Map app keeps the view following the GPS position; in a car the picture is centred a little ahead of the position so it lasts longer before it is rendered again. Heading-up mode renders the picture rotated; dragging the map frees the view.
+
+## Names in the UI (Hebrew)
+
+LVGL's own bidirectional text support is off (it would cost every label). Labels that show a name — places, the destination, toasts — use `nav_he_20` / `nav_he_28` (`ui/FontHe*.c`): only the Hebrew letters, from Rubik, with LVGL's Montserrat of the same size as the fallback font, so Latin text and the symbols look as everywhere else. `UiText::visual()` puts the text into visual order first (Hebrew runs right to left, Latin and digits left to right, brackets mirrored) — the same rule as the map labels. The Drive speed uses `nav_digits_120` (digits only). All three are generated by `tools/scripts/uifont.py`.
 
 ## Data on the SD card
 
 ```
 /GPSLOG/Snnnn.NMEA|.CSV       raw GPS of every boot (session files)
 /data/trips/<year>/<name>.gpx|.csv|.json   recorded trips
+/data/places.json             saved places
 /maps/<country>.pmtiles       street map (and optional satellite archive for the phone page)
 /www/map/                     the offline map page served to phones
 /assets/icons, /assets/wallpapers   optional LVGL images (tools/scripts/imgconv.ps1)
@@ -91,5 +103,5 @@ firmware/src/shell            launcher, status bar, console
 firmware/src/apps             the apps
 firmware/src/services         services (table above)
 firmware/src/diag             health, self-test, replay, console diagnostics
-firmware/src/ui               transitions
+firmware/src/ui               transitions, navigation widgets (NavUi), Hebrew text (UiText) and the extra fonts
 ```

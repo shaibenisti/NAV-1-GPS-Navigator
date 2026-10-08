@@ -12,7 +12,7 @@ constexpr int MIN_PCT = 10, DIM_PCT = 15;
 
 int s_pct = 100;
 uint32_t s_dimAfterS = 0;
-bool s_dimmed = false, s_swallow = false, s_pwm = false;
+bool s_dimmed = false, s_swallow = false, s_pwm = false, s_keepAwake = false;
 volatile bool s_off = false;         // forced off (firmware update), wins over everything
 
 void apply(int pct) {
@@ -35,7 +35,7 @@ void Backlight::begin() {
 }
 
 void Backlight::update() {
-  if (!s_dimAfterS || s_dimmed) return;
+  if (!s_dimAfterS || s_dimmed || s_keepAwake) return;
   if (lv_display_get_inactive_time(lv_display_get_default()) >= s_dimAfterS * 1000) {
     s_dimmed = true;
     apply(min(DIM_PCT, s_pct));
@@ -64,6 +64,11 @@ void Backlight::setDimAfter(uint32_t seconds) {
 uint32_t Backlight::dimAfter() { return s_dimAfterS; }
 bool Backlight::dimmed() { return s_dimmed; }
 bool Backlight::pwmOk() { return s_pwm; }
+
+void Backlight::keepAwake(bool on) {
+  s_keepAwake = on;
+  if (on) wake();
+}
 
 void Backlight::wake() {
   lv_display_trigger_activity(lv_display_get_default());   // restart the inactivity time

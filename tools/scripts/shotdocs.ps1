@@ -6,7 +6,7 @@
   neutral place with shiftnmea.py and put on the card as /system/replay/demo.NMEA (it starts with a fix):
       python tools\scripts\shiftnmea.py <raw capture> demo.NMEA <lat> <lon> [altitude offset]
       .\tools\scripts\sdput.ps1 demo.NMEA /system/replay/demo.NMEA
-  The demo trip recorded during the run is deleted from the card again at the end.
+  The demo trip recorded during the run and the two demo places are deleted from the card again at the end.
 #>
 param([string]$Replay = "/system/replay/demo.NMEA")
 $ErrorActionPreference = "Stop"
@@ -62,6 +62,28 @@ Shot "gps" "position" "page GPS 0;open GPS"
 Shot "gps" "satellites" "page GPS 1;open GPS"
 Shot "gps" "details" "page GPS 2;open GPS"
 Shot "compass" "compass" "open Compass" 4
+# places + navigation: two demo places a few hundred metres from the replayed position
+$g = Nav "diag gps" 1
+$pos = [regex]::Match($g, "\s(-?\d+\.\d+), (-?\d+\.\d+)\s+age")
+$demoPlaces = @()
+if ($pos.Success) {
+  $la = [double]$pos.Groups[1].Value; $lo = [double]$pos.Groups[2].Value
+  foreach ($p in @(@(0.0031, 0.0024, "Spring"), @(-0.0022, 0.0035, "Parking"))) {
+    $a = Nav ('place add {0:F7} {1:F7} "{2}"' -f ($la + $p[0]), ($lo + $p[1]), $p[2]) 1
+    if ($a -match "\[PLACE\] added (\d+)") { $demoPlaces += [int]$Matches[1] }
+  }
+}
+if ($demoPlaces.Count) {
+  Shot "places" "list" "open Places" 3
+  Shot "places" "detail" "page Places $($demoPlaces[0]);open Places" 3
+  Nav "place go $($demoPlaces[0])" 2 | Out-Null
+  Shot "navigate" "place" "open Navigate" 4
+  Shot "map" "go-to" "open Map" 12
+  Shot "compass" "destination" "open Compass" 4
+  Shot "drive" "drive" "open Drive" 4
+  Nav "nav stop" 1 | Out-Null
+}
+Shot "navigate" "start" "open Navigate" 3
 Shot "trips" "record" "page Trips 0;open Trips" 3
 $stop = Nav "trip stop" 6
 Nav "gps live" 2 | Out-Null
@@ -74,8 +96,13 @@ if ($base) {
   Nav "map trip $base" 12 | Out-Null
   Shot "map" "trip" "" 1
   Nav "home" 1 | Out-Null
+  Nav "nav follow $($base.Substring($base.LastIndexOf('/') + 1)) back" 2 | Out-Null
+  Shot "navigate" "route" "open Navigate" 4
+  Nav "nav stop" 1 | Out-Null
+  Nav "home" 1 | Out-Null
   foreach ($e in "gpx", "csv", "json") { Nav "sd rm $base.$e" 2 | Out-Null }
 }
+foreach ($i in ($demoPlaces | Sort-Object -Descending)) { Nav "place rm $i" 1 | Out-Null }
 Nav "home" 1 | Out-Null
 Nav "wifi on" 2 | Out-Null                                   # the setting the device had before
 Write-Host "done: $out"

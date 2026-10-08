@@ -45,6 +45,9 @@ namespace Settings {
   String tripStats();                  // "dur,moving,dist_m,max_kmh,points" saved every 30 s
   void setTripStats(const String &s);
 
+  String navState();                   // Navigator: the active guidance, "" = none (format: Navigator.cpp)
+  void setNavState(const String &s);
+
   bool lastPos(double &lat, double &lon);   // last GPS position seen by the Map app (default view without a fix)
   void setLastPos(double lat, double lon);
 

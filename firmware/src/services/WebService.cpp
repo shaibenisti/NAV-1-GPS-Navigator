@@ -13,6 +13,9 @@
 #include "WifiService.h"
 #include "BleService.h"
 #include "Ota.h"
+#include "Places.h"
+#include "Navigator.h"
+#include "Geo.h"
 #include "../../config.h"
 
 namespace {
@@ -31,6 +34,8 @@ header small{float:right;font-weight:400;color:#9ab;font-size:14px;margin-top:4p
 .v{font-size:20px}.c{font-size:12px;color:#9ab}
 a{color:#64b5f6}table{width:100%;border-collapse:collapse}td{padding:8px 4px;border-top:1px solid #2a3244;font-size:15px}
 td.r{text-align:right;white-space:nowrap}.muted{color:#9ab;font-size:13px}
+.b{font-size:15px;background:#1e88e5;color:#fff;border:0;border-radius:8px;padding:7px 12px;margin:2px}.b.d{background:#c62828}
+input{font-size:16px;background:#10141c;color:#eee;border:1px solid #2a3244;border-radius:8px;padding:7px;width:12em}
 </style></head><body>
 <header>NAV-1 <small id="dev"></small></header>
 <div class="card"><div id="st" class="state">...</div><div class="muted" id="sub"></div>
@@ -42,13 +47,20 @@ td.r{text-align:right;white-space:nowrap}.muted{color:#9ab;font-size:13px}
 <div><div class="c">Satellites</div><div class="v" id="sat">--</div></div>
 <div><div class="c">Accuracy (HDOP)</div><div class="v" id="hd">--</div></div>
 </div><p id="map"></p></div>
-<div class="card"><a href="/map"><b>Offline map</b></a> <span class="muted">- position and trips, no internet needed</span></div>
+<div class="card" id="navc" style="display:none"><b>Navigating to <span id="nvn"></span></b>
+<div class="grid"><div><div class="c">Distance</div><div class="v" id="nvd">--</div></div>
+<div><div class="c">Arrival in</div><div class="v" id="nve">--</div></div></div>
+<p><button class="b" onclick="post('/api/nav/stop')">Stop</button></p></div>
+<div class="card"><a href="/map"><b>Offline map</b></a> <span class="muted">- position, trips and places, no internet needed. Long press a point to save it or go there.</span></div>
+<div class="card"><b>Places</b> <span class="muted" id="pc"></span><table id="places"></table>
+<p><input id="pn" maxlength="40" placeholder="Name (e.g. Car)" dir="auto">
+<button class="b" onclick="saveHere()">Save NAV-1's position</button></p></div>
 <div class="card"><b>Trips</b> <span class="muted" id="rec"></span><table id="trips"></table></div>
 <div class="card muted" id="sys"></div>
 <script>
 const $=id=>document.getElementById(id);
 async function j(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
-async function loc(){try{const d=await j('/api/location');
+async function loc(){try{const d=await j('/api/location');if(d.lat!=null)here=[d.lat,d.lon];
 $('st').textContent=d.state.replace('_',' ');$('st').className='state '+d.state;
 $('sub').textContent=d.utc?('UTC '+d.utc):'';
 $('lat').textContent=d.lat!=null?d.lat.toFixed(6):'--';$('lon').textContent=d.lon!=null?d.lon.toFixed(6):'--';
@@ -64,7 +76,21 @@ async function trips(){try{const t=await j('/api/trips');$('trips').innerHTML=t.
 '<tr><td>'+x.title+'<br><span class="muted">'+x.distance_km.toFixed(2)+' km, '+Math.round(x.duration_s/60)+' min, max '+
 Math.round(x.max_kmh)+' km/h</span></td><td class="r"><a href="'+x.gpx+'" download>GPX</a></td></tr>').join(''):
 '<tr><td class="muted">No trips yet</td></tr>';}catch(e){}}
-loc();st();trips();setInterval(loc,2000);setInterval(st,10000);setInterval(trips,30000);
+var here=null,pl=[];
+function dist(a,b,c,d){const r=Math.PI/180,x=(d-b)*r*Math.cos((a+c)/2*r),y=(c-a)*r;return 6371009*Math.sqrt(x*x+y*y);}
+function fd(m){return m<1000?Math.round(m)+' m':(m/1000).toFixed(m<10000?2:1)+' km';}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function post(u,a){const b=new URLSearchParams(a||{});try{const r=await fetch(u,{method:'POST',body:b});const j=await r.json();
+if(!j.ok)alert(j.error||'failed');}catch(e){alert('NAV-1 not reachable');}places();nav();}
+async function places(){try{pl=await j('/api/places');$('pc').textContent=pl.length+' saved';$('places').innerHTML=pl.map((p,i)=>
+'<tr><td dir="auto">'+esc(p.name)+'<br><span class="muted">'+(here?fd(dist(here[0],here[1],p.lat,p.lon)):p.lat.toFixed(5)+', '+p.lon.toFixed(5))+
+'</span></td><td class="r"><button class="b" onclick="post(\'/api/goto\',{i:'+i+'})">Go</button><button class="b d" onclick="del('+i+')">&times;</button></td></tr>').join('');}catch(e){}}
+function del(i){if(confirm('Delete '+pl[i].name+'?'))post('/api/places/delete',{i:i,name:pl[i].name});}
+function saveHere(){if(!here){alert('NAV-1 has no GPS position yet');return;}post('/api/places',{name:$('pn').value||'',lat:here[0],lon:here[1]});$('pn').value='';}
+async function nav(){try{const n=await j('/api/nav');$('navc').style.display=n.mode=='off'?'none':'block';if(n.mode=='off')return;
+$('nvn').textContent=n.name;$('nvd').textContent=n.arrived?'Arrived':(n.dist_m!=null?fd(n.dist_m):'--');
+$('nve').textContent=n.eta_s?Math.round(n.eta_s/60)+' min':'--';}catch(e){}}
+loc();st();trips();places();nav();setInterval(loc,2000);setInterval(st,10000);setInterval(trips,30000);setInterval(nav,2000);setInterval(places,15000);
 </script></body></html>)HTML";
 
 constexpr uint32_t WEB_STACK = 8192;
@@ -75,7 +101,16 @@ TaskHandle_t s_task = nullptr;
 uint32_t s_requests = 0;                                    // written by the web task only
 SemaphoreHandle_t s_lock = nullptr;                        // UI loop <-> web task (a mutex: String copies allocate)
 String s_statusJson = "{}", s_locationJson = "{}";          // prepared in the UI loop
+String s_placesJson = "[]", s_navJson = "{}";
+uint32_t s_placesRev = 0;
 uint32_t s_lastPrepMs = 0;
+
+// Commands from the web task, run by the UI loop (one at a time; the web task waits for the answer)
+enum class Cmd : uint8_t { None, AddPlace, DeletePlace, GoTo, GoToPlace, Stop };
+struct Command { Cmd cmd; int index; double lat, lon; char name[Places::NAME_BYTES + 1]; };
+Command s_cmd = {};
+volatile bool s_cmdPending = false, s_cmdDone = false;
+String s_cmdResult;                                         // JSON answer
 
 String copyLocked(const String &s) {
   xSemaphoreTake(s_lock, portMAX_DELAY);
@@ -91,6 +126,16 @@ void setLocked(String &dst, const String &src) {
 }
 
 String num(bool valid, double v, int decimals) { return valid ? String(v, decimals) : String("null"); }
+
+String jsonText(const char *s) {
+  String o = "\"";
+  for (; *s; s++) {
+    const unsigned char c = (unsigned char)*s;
+    if (c == '"' || c == '\\') { o += '\\'; o += (char)c; }
+    else if (c >= 0x20) o += (char)c;
+  }
+  return o + "\"";
+}
 
 // ---- UI loop side ----------------------------------------------------------------------
 void prepare() {
@@ -116,12 +161,116 @@ void prepare() {
               ",\"distance_km\":" + String(TripRecorder::distanceKm(), 3) + "}}";
   setLocked(s_locationJson, loc);
   setLocked(s_statusJson, st);
+  if (Places::revision() != s_placesRev) { s_placesRev = Places::revision(); setLocked(s_placesJson, Places::json()); }
+  const Navigator::Status n = Navigator::status();
+  String nav = String("{\"mode\":\"") + (n.mode == Navigator::Mode::Place ? "place" : n.mode == Navigator::Mode::Route ? "route" : "off") + "\"";
+  if (n.mode != Navigator::Mode::None) {
+    nav += ",\"name\":" + jsonText(n.name) + ",\"dest_lat\":" + String(n.destLat, 7) + ",\"dest_lon\":" + String(n.destLon, 7) +
+           ",\"dist_m\":" + num(n.distM >= 0, n.distM, 0) + ",\"bearing_deg\":" + num(n.distM >= 0, n.bearingDeg, 0) +
+           ",\"eta_s\":" + String(n.etaS) + ",\"arrived\":" + (n.arrived ? "true" : "false") + ",\"off_route\":" + (n.offRoute ? "true" : "false") +
+           ",\"off_m\":" + String(n.offM, 0) + ",\"progress\":" + String(n.progress, 3) + ",\"reverse\":" + (n.reverse ? "true" : "false");
+    const String csv = Navigator::routeCsvUrl();
+    if (csv.length()) nav += ",\"route_csv\":\"" + csv + "\"";
+  }
+  setLocked(s_navJson, nav + "}");
+}
+
+// A command from the web task (UI loop)
+void serveCommand() {
+  if (!s_cmdPending) return;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const Command c = s_cmd;
+  s_cmdPending = false;
+  xSemaphoreGive(s_lock);
+  bool ok = false;
+  String err;
+  switch (c.cmd) {
+    case Cmd::AddPlace: {
+      String name = c.name;
+      name.trim();
+      if (!name.length()) name = Places::defaultName();
+      if (Places::count() >= Places::CAPACITY) err = "the list of places is full";
+      else ok = Places::add(name.c_str(), c.lat, c.lon) >= 0;
+      if (!ok && !err.length()) err = "bad name or position";
+      break;
+    }
+    case Cmd::DeletePlace: {
+      Places::Place p;
+      ok = Places::get(c.index, p) && (!c.name[0] || !strcmp(p.name, c.name)) && Places::remove(c.index);   // the name guards against a changed list
+      if (!ok) err = "no such place (the list changed?)";
+      break;
+    }
+    case Cmd::GoToPlace: {
+      Places::Place p;
+      ok = Places::get(c.index, p) && Navigator::goTo(p.name, p.lat, p.lon);
+      if (!ok) err = "no such place";
+      break;
+    }
+    case Cmd::GoTo:
+      ok = Navigator::goTo(c.name[0] ? c.name : "Phone point", c.lat, c.lon);
+      if (!ok) err = "bad position";
+      break;
+    case Cmd::Stop: Navigator::stop(); ok = true; break;
+    default: err = "unknown command"; break;
+  }
+  setLocked(s_cmdResult, ok ? String("{\"ok\":true}") : "{\"ok\":false,\"error\":" + jsonText(err.c_str()) + "}");
+  s_placesRev = 0;                                          // answer with fresh lists
+  prepare();
+  s_cmdDone = true;
 }
 
 // ---- web task side -----------------------------------------------------------------------
 void sendJson(const String &json) {
   s_server.sendHeader("Cache-Control", "no-store");
   s_server.send(200, "application/json", json);
+}
+
+
+// POST handlers: parse in the web task, run in the UI loop, answer {"ok":..}
+void runCommand(const Command &c) {
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  s_cmd = c;
+  s_cmdDone = false;
+  s_cmdPending = true;
+  xSemaphoreGive(s_lock);
+  for (int i = 0; i < 300 && !s_cmdDone; i++) vTaskDelay(pdMS_TO_TICKS(10));   // the loop prepares every 0.5 s
+  if (!s_cmdDone) { s_cmdPending = false; s_server.send(503, "application/json", "{\"ok\":false,\"error\":\"busy\"}"); return; }
+  sendJson(copyLocked(s_cmdResult));
+}
+
+void handlePlaceAdd() {
+  s_requests++;
+  Command c = {};
+  c.cmd = Cmd::AddPlace;
+  c.lat = s_server.arg("lat").toDouble();
+  c.lon = s_server.arg("lon").toDouble();
+  strlcpy(c.name, s_server.arg("name").c_str(), sizeof(c.name));
+  runCommand(c);
+}
+
+void handlePlaceDelete() {
+  s_requests++;
+  Command c = {};
+  c.cmd = Cmd::DeletePlace;
+  c.index = s_server.hasArg("i") ? s_server.arg("i").toInt() : -1;
+  strlcpy(c.name, s_server.arg("name").c_str(), sizeof(c.name));
+  runCommand(c);
+}
+
+void handleGoTo() {
+  s_requests++;
+  Command c = {};
+  if (s_server.hasArg("i")) { c.cmd = Cmd::GoToPlace; c.index = s_server.arg("i").toInt(); }
+  else { c.cmd = Cmd::GoTo; c.lat = s_server.arg("lat").toDouble(); c.lon = s_server.arg("lon").toDouble(); }
+  strlcpy(c.name, s_server.arg("name").c_str(), sizeof(c.name));
+  runCommand(c);
+}
+
+void handleNavStop() {
+  s_requests++;
+  Command c = {};
+  c.cmd = Cmd::Stop;
+  runCommand(c);
 }
 
 void handleTrips() {
@@ -268,6 +417,12 @@ void webTask(void *) {
   s_server.on("/api/status", HTTP_GET, [] { s_requests++; sendJson(copyLocked(s_statusJson)); });
   s_server.on("/api/location", HTTP_GET, [] { s_requests++; sendJson(copyLocked(s_locationJson)); });
   s_server.on("/api/trips", HTTP_GET, [] { s_requests++; handleTrips(); });
+  s_server.on("/api/places", HTTP_GET, [] { s_requests++; sendJson(copyLocked(s_placesJson)); });
+  s_server.on("/api/places", HTTP_POST, handlePlaceAdd);
+  s_server.on("/api/places/delete", HTTP_POST, handlePlaceDelete);
+  s_server.on("/api/nav", HTTP_GET, [] { s_requests++; sendJson(copyLocked(s_navJson)); });
+  s_server.on("/api/goto", HTTP_POST, handleGoTo);
+  s_server.on("/api/nav/stop", HTTP_POST, handleNavStop);
   s_server.onNotFound([] { s_requests++; route(); });
   s_server.enableCORS(true);
   const char *hdrs[] = { "Range" };
@@ -288,6 +443,7 @@ void WebService::begin(SdLog &sd) {
 }
 
 void WebService::update() {
+  if (s_cmdPending) serveCommand();
   if (millis() - s_lastPrepMs < 500) return;
   s_lastPrepMs = millis();
   const bool sta = WifiService::state() == WifiService::State::Connected;

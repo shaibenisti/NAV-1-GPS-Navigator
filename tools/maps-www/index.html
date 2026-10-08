@@ -24,11 +24,19 @@ select{font-size:15px;background:var(--bg);color:var(--ink);border:1px solid var
 .legend i{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .me{width:16px;height:16px;border-radius:50%;background:#1e88e5;border:3px solid #fff;box-shadow:0 0 0 2px rgba(30,136,229,.35)}
 .btn{font-size:14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.pin{width:14px;height:14px;border-radius:50%;background:#ffca28;border:3px solid #10141c}
+.dest{width:18px;height:18px;border-radius:50%;background:#e53935;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+.pop b{font-size:15px}.pop input{font-size:16px;width:100%;box-sizing:border-box;margin:6px 0;padding:6px;border:1px solid #aab;border-radius:6px}
+.pop button{font-size:14px;border:0;border-radius:6px;padding:7px 10px;margin:2px 4px 2px 0;background:#1e88e5;color:#fff}
+.pop button.g{background:#2e7d32}.pop button.d{background:#c62828}
+#nav{display:none;padding:8px 12px;background:#15202e;font-size:14px}#nav b{font-size:16px}
+#nav button{float:right;font-size:13px;border:0;border-radius:6px;padding:5px 9px;background:#c62828;color:#fff}
 .leaflet-control-attribution{font-size:10px}
 </style></head><body>
 <header><a href="/">&#8249; NAV-1</a><b>Map</b>
 <div class="seg"><button id="bg-map" aria-pressed="true">Map</button><button id="bg-sat" aria-pressed="false">Satellite</button></div>
 </header>
+<div id="nav"><button id="navstop">Stop</button><b id="navname" dir="auto"></b><br><span id="navinfo"></span></div>
 <div id="map"></div>
 <div class="bar">
 <select id="trip"><option value="">Trips...</option></select>
@@ -106,5 +114,67 @@ async function showTrip(i) {
 }
 document.getElementById('trip').onchange = e => showTrip(e.target.value);
 loadTrips();
+
+// places: saved points of NAV-1 (/api/places) - long press (right click) on the map to add one or to go there
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const fmtDist = m => m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' km';
+let places = [], placeLayer = L.layerGroup().addTo(map);
+async function post(url, args) {
+  try {
+    const j = await (await fetch(url, {method: 'POST', body: new URLSearchParams(args)})).json();
+    if (!j.ok) alert(j.error || 'failed');
+  } catch (e) { alert('NAV-1 not reachable'); }
+  map.closePopup(); loadPlaces(); loadNav();
+}
+window.goPlace = i => post('/api/goto', {i: i});
+window.delPlace = i => { if (confirm('Delete ' + places[i].name + '?')) post('/api/places/delete', {i: i, name: places[i].name}); };
+window.savePoint = (lat, lon) => post('/api/places', {name: document.getElementById('pname').value, lat: lat, lon: lon});
+window.goPoint = (lat, lon) => post('/api/goto', {lat: lat, lon: lon, name: document.getElementById('pname').value || 'Phone point'});
+async function loadPlaces() {
+  try { places = await (await fetch('/api/places', {cache: 'no-store'})).json(); } catch (e) { return; }
+  placeLayer.clearLayers();
+  places.forEach((p, i) => L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: '<div class="pin"></div>', iconSize: [20, 20]})})
+    .bindPopup('<div class="pop"><b dir="auto">' + esc(p.name) + '</b><br><button onclick="goPlace(' + i + ')">Go there</button>' +
+               '<button class="d" onclick="delPlace(' + i + ')">Delete</button></div>').addTo(placeLayer));
+}
+map.on('contextmenu', e => {
+  const lat = +e.latlng.lat.toFixed(7), lon = +e.latlng.lng.toFixed(7);
+  const d = lastFix ? '<br>' + fmtDist(map.distance(lastFix, e.latlng)) + ' from NAV-1' : '';
+  L.popup().setLatLng(e.latlng).setContent('<div class="pop"><b>' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</b>' + d +
+    '<input id="pname" maxlength="40" dir="auto" placeholder="Name"><button class="g" onclick="savePoint(' + lat + ',' + lon + ')">Save place</button>' +
+    '<button onclick="goPoint(' + lat + ',' + lon + ')">Navigate here</button></div>').openOn(map);
+});
+
+// the guidance running on NAV-1: destination, line from the position, the route being followed
+let destMarker = null, destLine = null, routeLine = null, routeUrl = '';
+async function loadNav() {
+  let n;
+  try { n = await (await fetch('/api/nav', {cache: 'no-store'})).json(); } catch (e) { return; }
+  const box = document.getElementById('nav');
+  box.style.display = n.mode === 'off' ? 'none' : 'block';
+  if (n.mode === 'off') {
+    [destMarker, destLine, routeLine].forEach(l => l && map.removeLayer(l));
+    destMarker = destLine = routeLine = null; routeUrl = '';
+    return;
+  }
+  document.getElementById('navname').textContent = n.name;
+  document.getElementById('navinfo').textContent = n.arrived ? 'Arrived' : (n.dist_m != null ? fmtDist(n.dist_m) : '--') +
+    (n.eta_s ? ', ' + Math.round(n.eta_s / 60) + ' min' : '') + (n.off_route ? ' - off the route (' + Math.round(n.off_m) + ' m)' : '');
+  const dest = [n.dest_lat, n.dest_lon];
+  if (!destMarker) destMarker = L.marker(dest, {icon: L.divIcon({className: '', html: '<div class="dest"></div>', iconSize: [24, 24]})}).addTo(map);
+  else destMarker.setLatLng(dest);
+  if (destLine) { map.removeLayer(destLine); destLine = null; }
+  if (n.mode === 'place' && lastFix) destLine = L.polyline([lastFix, dest], {color: '#e53935', weight: 3, dashArray: '6 8'}).addTo(map);
+  if ((n.route_csv || '') !== routeUrl) {
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+    routeUrl = n.route_csv || '';
+    if (routeUrl) try {
+      const rows = (await (await fetch(routeUrl)).text()).trim().split('\n').slice(1).map(r => r.split(','));
+      routeLine = L.polyline(rows.map(r => [+r[2], +r[3]]).filter(p => p[0]), {color: '#26c6da', weight: 6, opacity: .8}).addTo(map);
+    } catch (e) {}
+  }
+}
+document.getElementById('navstop').onclick = () => post('/api/nav/stop', {});
+loadPlaces(); loadNav(); setInterval(loadNav, 3000); setInterval(loadPlaces, 20000);
 </script>
 </body></html>

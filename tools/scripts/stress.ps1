@@ -55,7 +55,7 @@ try {
     $samples = @($start)
     $text = ""
     for ($c = 1; $c -le $Cycles; $c++) {
-      foreach ($app in "GPS", "Trips", "Phone", "Files", "Settings", "Tools") { $text += Invoke-Nav "open $app" 1.6 }
+      foreach ($app in "GPS", "Trips", "Phone", "Files", "Settings", "Tools", "Navigate", "Places", "Drive") { $text += Invoke-Nav "open $app" 1.6 }
       $text += Invoke-Nav "home" 0.9
       $text += Invoke-Nav "swipe" 0.9
       if ($c % 10 -eq 0) {

@@ -15,7 +15,8 @@
 
   Builds with idf-build.ps1 (ESP-IDF).
 
-  -Only areas: system memory gps time touch display sd wifi ble ui wifisave trips web sdfiles ota   (comma separated; web = PC fetches the NAV-1 web page, API, GPX;
+  -Only areas: system memory gps time touch display sd wifi ble ui wifisave trips nav web sdfiles ota   (comma separated; web = PC fetches the NAV-1 web page, API, GPX, places;
+              nav = places (add, file on the card, delete) and the navigator (go to a place, stop) over the console;
               sdfiles = settings.json edited on the PC + SD icon/wallpaper, restored afterwards;
               ota = firmware update over Wi-Fi: refusals, rollback after a reset, install + verify - only with -Only ota)
   trips = replay a recorded outdoor NMEA session (baseline.json replay_file) into a trip, check the GPX
@@ -42,7 +43,7 @@ $root = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 $quick = $Only -ne ""
 $areas = @($Only -split "[,\s]+" | Where-Object { $_ })
-$deviceAreas = ($areas | Where-Object { $_ -notin "ui", "wifisave", "trips", "web", "sdfiles", "ota" }) -join ","
+$deviceAreas = ($areas | Where-Object { $_ -notin "ui", "wifisave", "trips", "nav", "web", "sdfiles", "ota" }) -join ","
 $baseline0 = if (Test-Path "$PSScriptRoot\baseline.json") { Get-Content "$PSScriptRoot\baseline.json" -Raw | ConvertFrom-Json } else { $null }
 # Wi-Fi persistence regression (forget -> wrong password -> connect -> reboot -> auto-reconnect).
 # Needs the real network: tools\scripts\wifi.local.json = { "ssid": "...", "password": "..." } (git-ignored).
@@ -134,7 +135,7 @@ try {
   }
 
   # ---- 3. UI smoke test: open every app, RAM leak check, open timings -----------------------------
-  $uiApps = "GPS", "Trips", "Phone", "Files", "Settings", "Tools"   # every implemented app
+  $uiApps = "GPS", "Trips", "Phone", "Files", "Settings", "Tools", "Navigate", "Places", "Drive"   # every app (Map / Compass: own checks)
   if ($runUi) {
     Write-Host "[3/5] UI smoke test ($UiCycles cycles)..." -ForegroundColor Cyan
     $before = Get-InternalFreeKB (Invoke-Nav "diag mem" 0.6)
@@ -222,6 +223,38 @@ try {
       $sum = if ($first.Success) { [double]$first.Groups[2].Value * 1000 } else { -1 }
       $okD = $trk -gt 50 -and [math]::Abs($sum - $trk) -le [math]::Max(10, 0.05 * $trk)
       Add-Result "trips" ($(if ($okD) { "PASS" } else { "FAIL" })) ("distance {0:N0} m = GPX track {1:N0} m ({2} points)" -f $sum, $trk, $pts.Count)
+      # Back-track: follow the trip just recorded (Navigator loads its .csv as the route)
+      $n = Invoke-Nav "nav follow $tripName back" 2
+      $ok = $n -match "\[NAV\] follow .*: ok" -and $n -match "\[NAV\] route \(back\)"
+      Add-Result "trips" ($(if ($ok) { "PASS" } else { "FAIL" })) "follow the trip back (Navigator route from its .csv)"
+      [void](Invoke-Nav "nav stop" 1)
+    }
+  }
+
+  # ---- 4b. Places + navigator (console) ---------------------------------------------------------------
+  if ($areas -contains "nav" -or -not $quick) {
+    Write-Host "[4b] Places + navigator..." -ForegroundColor Cyan
+    $a = Invoke-Nav 'place add 31.7767000 35.2345000 "NAV1 test"' 1
+    if ($a -notmatch "\[PLACE\] added (\d+)") {
+      Add-Result "nav" $(if ($a -match "cannot add") { "WARN" } else { "FAIL" }) "place add: $(($a -split "`n" | Select-String '\[PLACE\]') -join ' ')"
+    } else {
+      $i = $Matches[1]
+      Wait-Nav 2.5                                 # written ~1 s after the change, in the background
+      $f = Invoke-Nav "place file" 1.5
+      $hasCard = $f -notmatch "no SD card"
+      Add-Result "nav" ($(if ($f -match "in sync yes" -or -not $hasCard) { "PASS" } else { "FAIL" })) "place added and written to /data/places.json$(if (-not $hasCard) { ' (no card: RAM only)' })"
+      $g = Invoke-Nav "place go $i" 1.5
+      $st = Invoke-Nav "nav" 1
+      Add-Result "nav" ($(if ($g -match "going to 'NAV1 test'" -and $st -match "\[NAV\] place 'NAV1 test'") { "PASS" } else { "FAIL" })) "go to the place: $(($st -split "`n" | Select-String '\[NAV\]' | Select-Object -First 1))"
+      $o = Invoke-Nav "open Navigate" 2.5
+      Add-Result "nav" ($(if ($o -match "\[UI\] opened Navigate") { "PASS" } else { "FAIL" })) "Navigate screen while guiding"
+      [void](Invoke-Nav "home" 1)
+      $s = Invoke-Nav "nav stop" 1
+      $r = Invoke-Nav "place rm $i" 1
+      Wait-Nav 2.5
+      $f = Invoke-Nav "place file" 1.5
+      $ok = $s -match "\[NAV\] off" -and $r -match "rm $($i): ok" -and ($f -match "in sync yes" -or -not $hasCard)
+      Add-Result "nav" ($(if ($ok) { "PASS" } else { "FAIL" })) "stop, test place removed, file in sync"
     }
   }
 
@@ -246,6 +279,12 @@ try {
           $okXml = try { [xml]$g.Content | Out-Null; $true } catch { $false }
           Add-Result "web" ($(if ($okXml) { "PASS" } else { "FAIL" })) "/api/trips ($($t.Count) trips) + GPX download $($g.RawContentLength) bytes in $($sw.ElapsedMilliseconds) ms, valid XML"
         } else { Add-Result "web" "WARN" "/api/trips: no trips to download" }
+        $add = (Invoke-WebRequest "http://$ip/api/places" -Method Post -Body @{ name = "NAV1 web test"; lat = "31.7767"; lon = "35.2345" } -TimeoutSec 8).Content | ConvertFrom-Json
+        $pl = @((Invoke-WebRequest "http://$ip/api/places" -TimeoutSec 8).Content | ConvertFrom-Json)
+        $idx = [array]::FindIndex([object[]]$pl, [Predicate[object]] { param($x) $x.name -eq "NAV1 web test" })
+        $del = if ($idx -ge 0) { (Invoke-WebRequest "http://$ip/api/places/delete" -Method Post -Body @{ i = "$idx"; name = "NAV1 web test" } -TimeoutSec 8).Content | ConvertFrom-Json } else { $null }
+        $nav = (Invoke-WebRequest "http://$ip/api/nav" -TimeoutSec 8).Content | ConvertFrom-Json
+        Add-Result "web" ($(if ($add.ok -and $idx -ge 0 -and $del.ok -and $nav.mode) { "PASS" } else { "FAIL" })) "/api/places: add from the phone, listed, deleted; /api/nav: $($nav.mode)"
         $code = try { (Invoke-WebRequest "http://$ip/trips/../../system" -TimeoutSec 5).StatusCode } catch { $_.Exception.Response.StatusCode.value__ }
         Add-Result "web" ($(if ($code -eq 404) { "PASS" } else { "FAIL" })) "path escape attempt refused (HTTP $code)"
       } catch { Add-Result "web" "FAIL" "request failed: $($_.Exception.Message)" }
@@ -266,15 +305,15 @@ try {
       $td = Join-Path $PSScriptRoot "testdata"
       try {
         Send-NavFile ([Text.Encoding]::UTF8.GetBytes("{`n  `"time_zone`": `"UTC`",`n  `"device_name`": `"bad name!`"`n}`n")) "/system/settings.json"
-        Send-NavFile ([IO.File]::ReadAllBytes("$td\Notes.bin")) "/assets/icons/Notes.bin"
+        Send-NavFile ([IO.File]::ReadAllBytes("$td\Notes.bin")) "/assets/icons/Places.bin"
         Send-NavFile ([IO.File]::ReadAllBytes("$td\home.bin")) "/assets/wallpapers/home.bin"
-        Send-NavFile ([byte[]](1..40)) "/assets/icons/Alerts.bin"
+        Send-NavFile ([byte[]](1..40)) "/assets/icons/Drive.bin"
         Reset-Nav
         $boot = Wait-NavFor "\[SHELL\] ready[^\r\n]*" $BootTimeout
         $tm = Invoke-Nav "diag time" 1
         $ok = $boot -match "\[SET\] /system/settings.json: 1 value\(s\) applied, 1 invalid ignored" -and $tm -match "zone UTC|\(UTC\)"
         Add-Result "sdfiles" ($(if ($ok) { "PASS" } else { "FAIL" })) "settings.json edited on the PC: time zone applied at boot, invalid device name ignored"
-        $ok = $boot -match "\[ASSET\] 2 loaded, 1 ignored" -and $boot -match "Alerts.bin ignored: not an LVGL"
+        $ok = $boot -match "\[ASSET\] 2 loaded, 1 ignored" -and $boot -match "Drive.bin ignored: not an LVGL"
         Add-Result "sdfiles" ($(if ($ok) { "PASS" } else { "FAIL" })) "SD images: tile icon + wallpaper loaded, corrupt file ignored (built-in icon kept)"
         $sw = Invoke-Nav "swipe" 1.5
         Add-Result "sdfiles" ($(if ($sw -match "frame\s+1 stale=0") { "PASS" } else { "FAIL" })) "home page with the SD icon draws ($(if ($sw -match '\+\s*(\d+)ms frame') { $Matches[1] } else { '?' }) ms)"

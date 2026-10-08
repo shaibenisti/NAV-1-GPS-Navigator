@@ -3,7 +3,7 @@
 //  AppRegistry / AppManager).
 // -----------------------------------------------------------------------------
 //  The launcher builds the app screen (colour, Back button, title) and hands the
-//  app an empty content area below the header (800 x CONTENT_H). Lifecycle:
+//  app an empty content area below the header (CONTENT_W x CONTENT_H = 480 x 688). Lifecycle:
 //    create(content) -> update() every UPDATE_MS while open -> destroy()
 //  destroy() runs before the screen is deleted; the app must drop every pointer
 //  to its LVGL objects there. Apps read service state and call service
@@ -56,5 +56,9 @@ void gpsAppSetPage(int page);
 void tripsAppSetPage(int page);
 // Map app: show this finished trip (its base path, as TripRecorder::Summary::base) the next time it opens.
 void mapAppShowTrip(const char *base);
+// Map app: centre on this point (a saved place) the next time it opens.
+void mapAppShowPlace(double lat, double lon);
+// Places app: open place i's detail the next time it opens (-1 = the list; console "page Places <i>").
+void placesAppOpen(int i);
 // Map app, console tests: "up" / "north" (heading-up or not), "zoom <0..7>".
 void mapAppCommand(const char *arg);

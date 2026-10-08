@@ -81,6 +81,10 @@ constexpr int MAX_TRACK = 600;
 float *s_trkLat = nullptr, *s_trkLon = nullptr;       // PSRAM (begin)
 int s_trkN = 0;
 float *s_trkCopy = nullptr;
+float *s_rtLat = nullptr, *s_rtLon = nullptr, *s_rtCopy = nullptr;   // route being followed (same layout)
+int s_rtN = 0;
+MapRender::Pin *s_pins = nullptr, *s_pinCopy = nullptr; // PSRAM (begin)
+int s_pinN = 0;
 
 // Feature loops (indexing, decoding off-screen geometry) read lots of PSRAM without drawing: sleep a tick every 192.
 int s_ticks = 0;
@@ -669,8 +673,35 @@ bool labelOnLine(const MapFont &font, const MapText::Run &run, uint32_t hash, in
   return false;
 }
 
+// A pin: a round head on a short stem, its name above it (if there is room)
+void drawPin(float x, float y, const MapRender::Pin &p) {
+  if (x < -20 || x > W + 20 || y < -40 || y > H + 20) return;
+  const bool dest = p.kind == MapRender::PIN_DEST;
+  const uint16_t col = dest ? rgb(229, 57, 53) : rgb(255, 202, 40);
+  const float r = dest ? 9.0f : 7.0f, hy = y - r - 6;              // the stem's foot is the position
+  for (int k = 0; k < 2; k++) {                                       // stem: dark outline, then colour
+    const float w = k ? 1.2f : 2.4f;
+    s_sx[0] = x; s_sy[0] = y; s_sx[1] = x; s_sy[1] = hy;
+    thickLine(0, 2, w * 2, k ? col : rgb(12, 15, 22));
+  }
+  disc(x, hy, r + 2.0f, rgb(12, 15, 22));
+  disc(x, hy, r, col);
+  disc(x, hy, r * 0.38f, dest ? rgb(255, 255, 255) : rgb(12, 15, 22));
+  const float pinBox[4] = { x - r - 2, hy - r - 2, x + r + 2, y + 1 };
+  MapText::Run run;                                                   // the name first: the pin's own box must not block it
+  if (p.name[0] && MapText::layout(MAPFONT_SMALL, (const uint8_t *)p.name, strlen(p.name), run)) {
+    float box[4];
+    const float ly = hy - r - 13;
+    labelBox(MAPFONT_SMALL, run.width, x, ly, 1, 0, box);
+    if (boxFree(box)) {
+      drawRun(MAPFONT_SMALL, run, x, ly, 1, 0);
+      if (s_nBox < MAX_BOX) { memcpy(s_box[s_nBox], box, sizeof(box)); s_nBox++; }
+    }
+  }
+  if (s_nBox < MAX_BOX) { memcpy(s_box[s_nBox], pinBox, sizeof(pinBox)); s_nBox++; }
+}
+
 void drawLabels(float zoom, const View *views, int nt) {
-  s_nBox = s_nName = 0;
   MapText::Run run;
   uint32_t hash;
   // place names first: they have priority over street names
@@ -778,30 +809,46 @@ bool renderFrame(const MapRender::Req &rq) {
     vTaskDelay(1);
     if (aborted()) { for (int i = 0; i < nt; i++) freeTile(s_tiles[i]); return false; }
   }
-  if (s_trkN >= 2) {                                                 // the recording trip
-    float *lat = s_trkLat, *lon = s_trkLon;
+  // overlays: the route being followed (cyan), then the recording trip (orange) on top
+  auto overlay = [&](const float *srcLat, const float *srcLon, const int &srcN, float *copy, float wd, uint16_t col) {
     int n;
     portENTER_CRITICAL(&s_mux);
-    n = s_trkN;
-    memcpy(s_trkCopy, s_trkLat, sizeof(float) * n);
-    memcpy(s_trkCopy + MAX_TRACK, s_trkLon, sizeof(float) * n);
+    n = srcN;
+    if (n >= 2) { memcpy(copy, srcLat, sizeof(float) * n); memcpy(copy + MAX_TRACK, srcLon, sizeof(float) * n); }
     portEXIT_CRITICAL(&s_mux);
-    lat = s_trkCopy;
-    lon = s_trkCopy + MAX_TRACK;
+    if (n < 2) return;
     for (int i = 0; i < n; i++) {
       double px, py;
-      lonlatToTile(lon[i], lat[i], tz, px, py);
+      lonlatToTile(copy[MAX_TRACK + i], copy[i], tz, px, py);
       const float wx = (float)((px - fx) * scale), wy = (float)((py - fy) * scale);
       s_sx[i] = pw + wx * cs - wy * sn;
       s_sy[i] = ph + wx * sn + wy * cs;
     }
-    thickLine(0, n, 9.0f * sc, rgb(10, 12, 18));
-    thickLine(0, n, 6.0f * sc, rgb(255, 87, 34));
-  }
+    thickLine(0, n, (wd + 3.0f) * sc, rgb(10, 12, 18));
+    thickLine(0, n, wd * sc, col);
+  };
+  overlay(s_rtLat, s_rtLon, s_rtN, s_rtCopy, 7.0f, rgb(38, 198, 218));
+  overlay(s_trkLat, s_trkLon, s_trkN, s_trkCopy, 6.0f, rgb(255, 87, 34));
   if (!aborted()) {
     View views[MAX_TILES];
     for (int i = 0; i < nt; i++) views[i] = view(s_tiles[i]);
     const uint32_t tl = millis();
+    s_nBox = s_nName = 0;
+    // pins (saved places, the destination) first: their names have priority over the map's
+    int np;
+    portENTER_CRITICAL(&s_mux);
+    np = s_pinN;
+    if (np) memcpy(s_pinCopy, s_pins, sizeof(MapRender::Pin) * np);
+    portEXIT_CRITICAL(&s_mux);
+    for (int pass = 0; pass < 2; pass++)                             // the destination last = on top
+      for (int i = 0; i < np; i++) {
+        const MapRender::Pin &p = s_pinCopy[i];
+        if ((p.kind == MapRender::PIN_DEST) != (pass == 1)) continue;
+        double px, py;
+        lonlatToTile(p.lon, p.lat, tz, px, py);
+        const float wx = (float)((px - fx) * scale), wy = (float)((py - fy) * scale);
+        drawPin(pw + wx * cs - wy * sn, ph + wx * sn + wy * cs, p);
+      }
     drawLabels(zoom, views, nt);
     s_labelMs = millis() - tl;
     s_labels = s_nBox;
@@ -861,7 +908,14 @@ bool MapRender::begin(const char *path) {
   s_trkLon = s_trkLat + MAX_TRACK;
   s_trkCopy = s_trkLat + 2 * MAX_TRACK;
   s_trkN = 0;
-  if (!s_img[0] || !s_img[1] || !s_tiles || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
+  s_rtLat = (float *)ps(sizeof(float) * MAX_TRACK * 4);
+  s_rtLon = s_rtLat ? s_rtLat + MAX_TRACK : nullptr;
+  s_rtCopy = s_rtLat ? s_rtLat + 2 * MAX_TRACK : nullptr;
+  s_rtN = 0;
+  s_pins = (MapRender::Pin *)ps(sizeof(MapRender::Pin) * MAX_PINS * 2);
+  s_pinCopy = s_pins ? s_pins + MAX_PINS : nullptr;
+  s_pinN = 0;
+  if (!s_rtLat || !s_pins || !s_img[0] || !s_img[1] || !s_tiles || !s_sx || !s_sy || !s_ring || !s_edges || !s_act || !s_xs || !s_tmpFeat || !s_tmpVal || !s_trkLat) {
     s_err = "out of memory";
     end();
     return false;
@@ -884,8 +938,12 @@ void MapRender::end() {
   if (s_task) { vTaskDeleteWithCaps(s_task); s_task = nullptr; }
   if (s_tiles) { for (int i = 0; i < MAX_TILES; i++) freeTile(s_tiles[i]); }
   void **all[] = { (void **)&s_img[0], (void **)&s_img[1], (void **)&s_tiles, (void **)&s_sx, (void **)&s_sy, (void **)&s_ring,
-                   (void **)&s_edges, (void **)&s_act, (void **)&s_xs, (void **)&s_tmpFeat, (void **)&s_tmpVal, (void **)&s_trkLat };
+                   (void **)&s_edges, (void **)&s_act, (void **)&s_xs, (void **)&s_tmpFeat, (void **)&s_tmpVal, (void **)&s_trkLat,
+                   (void **)&s_rtLat, (void **)&s_pins };
   for (void **p : all) { if (*p) heap_caps_free(*p); *p = nullptr; }
+  s_trkN = s_rtN = s_pinN = 0;
+  s_trkLon = s_trkCopy = s_rtLon = s_rtCopy = nullptr;
+  s_pinCopy = nullptr;
   MapTiles::close();
   s_mapOk = false;
   s_readyIdx = -1;
@@ -926,6 +984,39 @@ void MapRender::setTrack(const float *lat, const float *lon, int n) {
   if (n) { memcpy(s_trkLat, lat, sizeof(float) * n); memcpy(s_trkLon, lon, sizeof(float) * n); }
   s_trkN = n;
   portEXIT_CRITICAL(&s_mux);
+}
+
+void MapRender::setRoute(const float *lat, const float *lon, int n) {
+  n = constrain(n, 0, MAX_TRACK);
+  if (!s_rtLat) return;
+  portENTER_CRITICAL(&s_mux);
+  if (n) { memcpy(s_rtLat, lat, sizeof(float) * n); memcpy(s_rtLon, lon, sizeof(float) * n); }
+  s_rtN = n;
+  portEXIT_CRITICAL(&s_mux);
+}
+
+void MapRender::setPins(const Pin *pins, int n) {
+  n = constrain(n, 0, MAX_PINS);
+  if (!s_pins) return;
+  portENTER_CRITICAL(&s_mux);
+  if (n) memcpy(s_pins, pins, sizeof(Pin) * n);
+  s_pinN = n;
+  portEXIT_CRITICAL(&s_mux);
+}
+
+void MapRender::positionOfPixel(const Req &c, int x, int y, double &lon, double &lat) {
+  const float zoom = constrain(c.zoom, ZMIN, ZMAX);
+  const int tz = tzFor(zoom);
+  const double scale = 256.0 * pow(2.0, zoom - tz);
+  double cx, cy;
+  lonlatToTile(c.lon, c.lat, tz, cx, cy);
+  const double pw = W / 2.0, ph = c.headingUp ? H / 2.0 + 130.0 : H / 2.0;
+  const double phi = c.headingUp ? -c.heading * M_PI / 180.0 : 0.0;
+  const double dX = x - pw, dY = y - ph;
+  const double wx = dX * cos(phi) + dY * sin(phi), wy = -dX * sin(phi) + dY * cos(phi);   // inverse rotation
+  const double n = (double)(1 << tz), tx = cx + wx / scale, ty = cy + wy / scale;
+  lon = tx / n * 360.0 - 180.0;
+  lat = atan(sinh(M_PI * (1.0 - 2.0 * ty / n))) * 180.0 / M_PI;
 }
 
 void MapRender::positionAt(const Req &c, int dx, int dy, double &lon, double &lat) {   // north-up pictures: dx, dy from the picture centre

@@ -14,6 +14,7 @@
 #include <esp_heap_caps.h>
 #include "../services/TripRecorder.h"
 #include "../services/Location.h"
+#include "../services/Navigator.h"
 
 namespace {
 
@@ -190,6 +191,13 @@ void onShowOnMap(lv_event_t *e) {
   Shell::switchApp("Map");
 }
 
+// Follow the trip with Navigator (at its end: back to its start) and show the guidance
+void onFollow(lv_event_t *e) {
+  const int i = (int)(intptr_t)lv_event_get_user_data(e);
+  if (i < 0 || i >= s_tripCount) return;
+  if (Navigator::follow(s_trips[i].base, s_trips[i].title.c_str())) Shell::switchApp("Navigate");
+}
+
 void openDetail(int i) {
   if (i < 0 || i >= s_tripCount) return;
   const TripRecorder::Summary &t = s_trips[i];
@@ -221,13 +229,20 @@ void openDetail(int i) {
   lv_label_set_text(stat(s_ui.detail, x, y0 + 116, "Max speed", &lv_font_montserrat_20), b);
   snprintf(b, sizeof(b), "%lu", (unsigned long)t.points);
   lv_label_set_text(stat(s_ui.detail, x + dx, y0 + 116, "Track points", &lv_font_montserrat_20), b);
+  const int bw = (Apps::PAGE_INNER_W - 10) / 2;
   lv_obj_t *mb = lv_button_create(s_ui.detail);                // the route on the street map
-  lv_obj_set_size(mb, Apps::PAGE_INNER_W, 56);
+  lv_obj_set_size(mb, bw, 56);
   lv_obj_set_pos(mb, 0, ROUTE_H + 12 + 180);
   lv_obj_center(label(mb, &lv_font_montserrat_20, lv_color_white(), LV_SYMBOL_IMAGE "  Show on map"));
   lv_obj_add_event_cb(mb, onShowOnMap, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+  lv_obj_t *fb = lv_button_create(s_ui.detail);                // guidance along it (back-track)
+  lv_obj_set_size(fb, bw, 56);
+  lv_obj_set_pos(fb, bw + 10, ROUTE_H + 12 + 180);
+  lv_obj_set_style_bg_color(fb, lv_color_hex(0xF4511E), 0);
+  lv_obj_center(label(fb, &lv_font_montserrat_20, lv_color_white(), LV_SYMBOL_LOOP "  Follow"));
+  lv_obj_add_event_cb(fb, onFollow, LV_EVENT_CLICKED, (void *)(intptr_t)i);
   lv_obj_t *hint = label(s_ui.detail, &lv_font_montserrat_14, lv_color_hex(0xBBBBBB),
-                         "GPX download: Phone app > NAV-1 page > Trips.");
+                         "Follow: guidance along this route - at its end, back to its start. GPX download: Phone app > NAV-1 page > Trips.");
   lv_obj_set_pos(hint, 0, ROUTE_H + 12 + 246);
   lv_obj_set_width(hint, Apps::PAGE_INNER_W);
 }

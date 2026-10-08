@@ -8,10 +8,16 @@
 //    /api/location          JSON: fix, position, speed, course, altitude, accuracy, UTC
 //    /api/trips             JSON: recorded trips (newest first) with file links
 //    /trips/<dir>/<name>.gpx|.csv   trip files from the SD card
+//    /api/places            GET: saved places [{name, lat, lon}] (index = position in the list)
+//                           POST name, lat, lon: add one;  POST /api/places/delete i, name: delete one
+//    /api/nav               GET: the guidance (Navigator);  POST /api/goto i | lat, lon, name: go to a place
+//                           or a point;  POST /api/nav/stop
 //  The server runs in its own task (core 0): downloads never block the UI loop.
-//  Thread safety: the UI loop prepares the status/location JSON every 0.5 s
-//  (update()); the web task only copies it. SD access goes through SdLog's lock.
-//  Read-only for now; settings/commands over HTTP come later (with security).
+//  Thread safety: the UI loop prepares the status/location/places/nav JSON every 0.5 s
+//  (update()); the web task only copies it. Commands (POST) are handed to the UI loop through
+//  one slot and answered when it has run them (<= 0.5 s). SD access goes through SdLog's lock.
+//  Places and navigation can be changed by anyone on the same network or the hotspot (like the
+//  device's own screen); firmware updates need arming on the device (Ota).
 // =============================================================================
 #pragma once
 

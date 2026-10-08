@@ -182,6 +182,11 @@ bool Settings::lastPos(double &lat, double &lon) {
   return true;
 }
 void Settings::setLastPos(double lat, double lon) { s_prefs.putDouble("pos_lat", lat); s_prefs.putDouble("pos_lon", lon); }
+String Settings::navState() { return s_prefs.getString("nav", ""); }
+void Settings::setNavState(const String &s) {
+  if (s.length()) s_prefs.putString("nav", s);
+  else if (s_prefs.isKey("nav")) s_prefs.remove("nav");
+}
 String Settings::tripPath() { return s_prefs.getString("trip_path", ""); }
 void Settings::setTripPath(const String &path) { s_prefs.putString("trip_path", path); }
 String Settings::tripStats() { return s_prefs.getString("trip_stats", ""); }

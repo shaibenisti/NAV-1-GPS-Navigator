@@ -2,28 +2,35 @@
 //  Compass app: heading while moving. The device has no magnetic sensor, so the heading is the GPS
 //  course over ground - valid only while the device actually moves (>= 3 km/h to start, held down
 //  to 1.5 km/h); standing still the dial keeps the last heading, dimmed, and says so. Heading-up dial
-//  (the direction of travel is always at the top), north marked in red. Product UI only.
+//  (the direction of travel is always at the top), north marked in red. While Navigator guides, the
+//  destination's direction is a green mark on the ring and its name and distance are in the dial.
+//  Product UI only.
 // =============================================================================
 #include "App.h"
 
 #include <Arduino.h>
 #include <math.h>
 #include "../services/Location.h"
+#include "../services/Geo.h"
+#include "../services/Navigator.h"
+#include "../ui/UiText.h"
 
 namespace {
 
 constexpr int DIAL = 456;                 // dial object size (square)
 constexpr int R = DIAL / 2 - 6;           // ring radius
 constexpr float START_KMH = 3.0f, HOLD_KMH = 1.5f;
-constexpr uint32_t C_NORTH = 0xE53935, C_POINTER = 0xFFB300, C_RING = 0x9FA8DA;
+constexpr uint32_t C_NORTH = 0xE53935, C_POINTER = 0xFFB300, C_RING = 0x9FA8DA, C_DEST = 0x66BB6A;
 
 struct Ui {
   lv_obj_t *heading = nullptr, *hint = nullptr, *dial = nullptr, *speed = nullptr, *unit = nullptr, *alt = nullptr, *sats = nullptr;
+  lv_obj_t *dest = nullptr;
 };
 Ui s_ui;
 float s_heading = 0;        // shown heading, degrees (smoothed)
 bool s_moving = false;      // heading currently live
 bool s_seen = false;        // a heading was ever shown
+float s_destBearing = -1;   // Navigator: bearing to the guide point (< 0 = not navigating)
 
 const char *cardinal(float deg) {
   static const char *const N[] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
@@ -105,6 +112,23 @@ void onDraw(lv_event_t *e) {
   tri.p[2].x = cx + 14; tri.p[2].y = cy - R + 62;
   lv_draw_triangle(layer, &tri);
 
+  // Destination (Navigator): a green mark on the ring, pointing inwards
+  if (s_destBearing >= 0) {
+    int x1, y1, x2, y2;
+    polar(cx, cy, s_destBearing - 5, R + 2, x1, y1);
+    polar(cx, cy, s_destBearing + 5, R + 2, x2, y2);
+    int xi, yi;
+    polar(cx, cy, s_destBearing, R - 40, xi, yi);
+    lv_draw_triangle_dsc_t dt;
+    lv_draw_triangle_dsc_init(&dt);
+    dt.color = lv_color_hex(C_DEST);
+    dt.opa = live;
+    dt.p[0].x = xi; dt.p[0].y = yi;
+    dt.p[1].x = x1; dt.p[1].y = y1;
+    dt.p[2].x = x2; dt.p[2].y = y2;
+    lv_draw_triangle(layer, &dt);
+  }
+
   // Centre dot
   lv_draw_rect_dsc_t dot;
   lv_draw_rect_dsc_init(&dot);
@@ -130,6 +154,12 @@ void create(lv_obj_t *content) {
   lv_obj_set_size(s_ui.dial, DIAL, DIAL);
   lv_obj_set_pos(s_ui.dial, 12, 92);
   lv_obj_add_event_cb(s_ui.dial, onDraw, LV_EVENT_DRAW_MAIN, nullptr);
+
+  s_ui.dest = label(content, &nav_he_20, C_DEST);
+  lv_obj_set_width(s_ui.dest, 300);
+  lv_obj_set_style_text_align(s_ui.dest, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(s_ui.dest, LV_LABEL_LONG_DOT);
+  lv_obj_set_pos(s_ui.dest, 90, 92 + DIAL / 2 + 40);
 
   s_ui.speed = label(content, &lv_font_montserrat_48, 0xFFFFFF);
   lv_obj_align(s_ui.speed, LV_ALIGN_TOP_MID, -40, 568);
@@ -170,6 +200,17 @@ void update() {
   Apps::setText(s_ui.hint, s_moving ? "Heading from GPS movement"
                           : !fix    ? "Waiting for a GPS fix"
                                     : "Not moving - the heading comes from GPS movement");
+  const float destBearing = Navigator::active() && Navigator::status().distM >= 0 && !Navigator::status().arrived ? Navigator::status().bearingDeg : -1;
+  if (fabsf(destBearing - s_destBearing) >= 1.0f) { s_destBearing = destBearing; redraw = true; }
+  if (Navigator::active()) {
+    const Navigator::Status st = Navigator::status();
+    char t[80], dd[24];
+    if (st.arrived) strcpy(dd, "arrived");
+    else Geo::formatDistance(st.distM, dd, sizeof(dd));
+    snprintf(t, sizeof(t), "%s  %s", st.name, dd);
+    UiText::setName(s_ui.dest, t);
+  }
+  lv_obj_set_hidden(s_ui.dest, !Navigator::active());
   if (redraw) lv_obj_invalidate(s_ui.dial);
 
   if (kmh >= 0) snprintf(b, sizeof(b), "%.0f", kmh);
@@ -183,7 +224,7 @@ void update() {
   Apps::setText(s_ui.sats, b);
 }
 
-void destroy() { s_ui = Ui(); }
+void destroy() { s_ui = Ui(); s_destBearing = -1; }
 
 }  // namespace
 

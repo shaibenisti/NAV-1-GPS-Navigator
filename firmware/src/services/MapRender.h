@@ -1,7 +1,8 @@
 // =============================================================================
 //  MapRender  -  renders the offline street map (vector tiles from MapTiles) into an RGB565 image in
-//  a background task, so the UI never waits for it. North-up, centred on a position, dark theme, no
-//  labels. Prototype of the algorithm: tools/scripts/maprender.py.
+//  a background task, so the UI never waits for it. North up or heading up, centred on a position, dark
+//  theme, street and place names, the trip overlays and pins for saved places. Prototype of the algorithm:
+//  tools/scripts/maprender.py.
 //
 //  The Map app asks for a view (request()); the newest request wins. When a frame is finished,
 //  poll() hands out the image once. begin() allocates ~1.4 MB PSRAM and starts the task, end() frees it.
@@ -32,6 +33,13 @@ namespace MapRender {
 
   // Track overlay (the recording trip): drawn on every frame until cleared. n <= 600; copied.
   void setTrack(const float *lat, const float *lon, int n);
+  // Route overlay (the trip being followed, Navigator): drawn under the track. n <= 600; copied.
+  void setRoute(const float *lat, const float *lon, int n);
+  // Pins (saved places, the destination) with their names, drawn above everything. n <= MAX_PINS; copied.
+  constexpr int MAX_PINS = 64;
+  struct Pin { float lat, lon; char name[44]; uint8_t kind; };   // kind: PIN_PLACE / PIN_DEST
+  enum : uint8_t { PIN_PLACE = 0, PIN_DEST = 1 };
+  void setPins(const Pin *pins, int n);
 
   // Metres per image pixel at a latitude and zoom (for the scale bar)
   double metersPerPixel(double lat, float zoom);
@@ -39,4 +47,6 @@ namespace MapRender {
   void pixelOf(const Req &centre, double lon, double lat, int &x, int &y);
   // Inverse for north-up pictures: the position at pixel offset (dx, dy) from the picture's centre
   void positionAt(const Req &centre, int dx, int dy, double &lon, double &lat);
+  // Inverse of pixelOf for any picture (north up or heading up): the position under picture pixel (x, y)
+  void positionOfPixel(const Req &centre, int x, int y, double &lon, double &lat);
 }

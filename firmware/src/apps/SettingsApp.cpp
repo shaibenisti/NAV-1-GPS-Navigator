@@ -96,13 +96,14 @@ void openPasswordDialog(lv_obj_t *anyChild) {
   lv_obj_set_style_bg_opa(ov, LV_OPA_COVER, 0);           // opaque: cheap to draw
   lv_obj_set_clickable(ov, true);              // swallows taps
   lv_obj_t *title = label(ov, &lv_font_montserrat_20, "");
-  lv_label_set_text_fmt(title, "Password for '%s'   (" LV_SYMBOL_OK " connect, " LV_SYMBOL_KEYBOARD " cancel)", s_selSsid);
-  lv_obj_set_pos(title, 24, 48);
+  lv_obj_set_width(title, Display::UI_W - 48);
+  lv_label_set_text_fmt(title, "Password for '%s'\n" LV_SYMBOL_OK " connect   " LV_SYMBOL_KEYBOARD " cancel", s_selSsid);
+  lv_obj_set_pos(title, 24, 60);
   lv_obj_t *ta = lv_textarea_create(ov);
   lv_textarea_set_one_line(ta, true);
   lv_textarea_set_max_length(ta, 63);
-  lv_obj_set_size(ta, 752, 56);
-  lv_obj_set_pos(ta, 24, 84);
+  lv_obj_set_size(ta, Display::UI_W - 48, 56);
+  lv_obj_set_pos(ta, 24, 136);
   lv_obj_t *kb = lv_keyboard_create(ov);
   lv_obj_set_size(kb, Display::UI_W, 320);
   lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);

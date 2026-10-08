@@ -32,7 +32,7 @@ or the browser flasher (Chrome / Edge) on the project's GitHub Pages site, or `p
 ```powershell
 .\idf-build.ps1                      # compile → idf\build\NAV1.bin
 .\idf-build.ps1 -Upload              # compile + flash (COM3; -Port COM5 to change)
-.\idf-build.ps1 -Upload -OutDir archive\v0.6.0   # also keep the binaries and sdkconfig
+.\idf-build.ps1 -Upload -OutDir archive\v0.7.0   # also keep the binaries and sdkconfig
 .\idf-build.ps1 -Menuconfig          # browse system settings (copy changes into idf\sdkconfig.defaults)
 ```
 
@@ -50,19 +50,19 @@ The device has a serial console (115200 baud on the board's USB port):
 .\tools\scripts\nav.ps1 "open Map" "map zoom 2"  # UI hooks: open <app>, page <App> <n>, home, swipe
 ```
 
-Useful commands: `diag [sys|mem|gps|time|wifi|ble|touch|display|sd]`, `selftest`, `gps profile|ubx|replay <file> [speed]|live`, `trip start|stop|list`, `wifi on|off|scan|connect`, `ble on|off`, `sd ls|cat|df|rm|put`, `backlight`, `map`, `refills` (screen refill timing). Opening the COM port resets the board (CH340 DTR/RTS); the firmware is written for that.
+Useful commands: `diag [sys|mem|gps|time|wifi|ble|touch|display|sd]`, `selftest`, `gps profile|ubx|replay <file> [speed]|live`, `trip start|stop|list`, `place list|add|rename|rm|go`, `nav [status]|goto|follow <trip> [back]|reverse|stop`, `wifi on|off|scan|connect`, `ble on|off`, `sd ls|cat|df|rm|put`, `backlight`, `map`, `refills` (screen refill timing). Opening the COM port resets the board (CH340 DTR/RTS); the firmware is written for that.
 
 ## One-command validation
 
 ```powershell
 .\tools\scripts\validate.ps1                  # build + flash + boot + UI smoke + self-test + drift check (~3 min)
 .\tools\scripts\validate.ps1 -NoBuild        # the same on the firmware already on the device
-.\tools\scripts\validate.ps1 -Only gps,wifi  # quick focused check (areas: system memory gps time touch display sd wifi ble ui web trips sdfiles)
+.\tools\scripts\validate.ps1 -Only gps,wifi  # quick focused check (areas: system memory gps time touch display sd wifi ble ui web trips nav sdfiles)
 .\tools\scripts\validate.ps1 -Archive        # keep binaries + log + JSON in archive\<build id>\ (for a release)
 .\tools\scripts\validate.ps1 -UpdateBaseline # accept this run's measurements as the new expected values
 ```
 
-It opens every app several times and checks for memory leaks, runs the on-device self-test, serves the web page and API to the PC, edits `settings.json` and images on the card, and compares boot time, app-open time, frame time, RAM and firmware size with `tools/scripts/baseline.json`. Exit code 1 on any failure. Some checks (`trips`) replay a recorded GPS session from `/system/replay/` on the card; indoors, GPS "no fix" warnings are normal.
+It opens every app several times and checks for memory leaks, runs the on-device self-test, serves the web page and API to the PC (including adding and deleting a place from the "phone"), adds a test place and navigates to it over the console, edits `settings.json` and images on the card, and compares boot time, app-open time, frame time, RAM and firmware size with `tools/scripts/baseline.json`. Exit code 1 on any failure. Some checks (`trips`, which also follows the replayed trip back with the navigator) replay a recorded GPS session from `/system/replay/` on the card; indoors, GPS "no fix" warnings are normal.
 
 ## Other tools
 
@@ -72,6 +72,7 @@ It opens every app several times and checks for memory leaks, runs the on-device
 | `shot.ps1`, `shotdocs.ps1` | Screenshot of the real display over the console (`-Open "page Settings 2;open Settings"` first) / the set in `docs/screenshots` |
 | `ota.ps1` | Build + install over Wi-Fi with rollback |
 | `mapfont.py` | Builds the map label font (`firmware/src/services/MapFontData.cpp`) from a TrueType font with ImageMagick |
+| `uifont.py` | Builds the UI fonts for names in Hebrew and the Drive speed (`firmware/src/ui/Font*.c`) with `lv_font_conv` (npm) |
 | `shiftnmea.py` | Move a recorded NMEA session to another place (for demos and screenshots without real locations) |
 | `shotmap.ps1`, `shotframe.ps1`, `stlrender.py` | The README overview picture (framed screenshots, ImageMagick); a dependency-free STL renderer for the case previews |
 | `maps.ps1`, `mapload.ps1`, `maps_sat_fetch.py` | Build the offline maps and put them on the card; load-test the map server |

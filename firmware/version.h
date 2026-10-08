@@ -15,9 +15,9 @@
 #pragma once
 
 #define FW_VERSION_MAJOR 0
-#define FW_VERSION_MINOR 6
+#define FW_VERSION_MINOR 7
 #define FW_VERSION_PATCH 0
-#define FW_VERSION       "0.6.0"
+#define FW_VERSION       "0.7.0"
 
 #if __has_include("build_info.h")
 #include "build_info.h"

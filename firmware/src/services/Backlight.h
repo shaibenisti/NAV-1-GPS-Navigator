@@ -24,6 +24,7 @@ namespace Backlight {
   bool dimmed();
   bool pwmOk();                          // PWM attached (else the backlight is simply on)
   void wake();
+  void keepAwake(bool on);               // an app that is read at a glance (Drive, Navigate): no dimming while it is open
 
   // LvglPort touch gate: false = do not pass this touch to LVGL.
   bool touchGate(bool pressed);

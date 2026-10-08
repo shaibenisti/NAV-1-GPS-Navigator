@@ -11,6 +11,9 @@ extern const AppImpl FILES_APP;
 extern const AppImpl STORAGE_APP;
 extern const AppImpl COMPASS_APP;
 extern const AppImpl MAP_APP;
+extern const AppImpl NAVIGATE_APP;
+extern const AppImpl PLACES_APP;
+extern const AppImpl DRIVE_APP;
 
 namespace {
 // The launcher: home tile order (6 per page), symbol, tile colour, implementation
@@ -20,8 +23,8 @@ const Apps::Entry ENTRIES[] = {
   {"Trips",    LV_SYMBOL_LOOP,     0x43A047, &TRIPS_APP},    {"Settings", LV_SYMBOL_SETTINGS,  0x546E7A, &SETTINGS_APP},
   {"GPS",      LV_SYMBOL_GPS,      0x1E88E5, &GPS_APP},      {"Files",    LV_SYMBOL_DIRECTORY, 0xFB8C00, &FILES_APP},
   {"Map",      LV_SYMBOL_IMAGE,    0x00897B, &MAP_APP},       {"Compass",  LV_SYMBOL_EYE_OPEN,  0x3949AB, &COMPASS_APP},
-  {"Alerts",   LV_SYMBOL_BELL,     0xC0CA33, nullptr},       {"Notes",    LV_SYMBOL_EDIT,      0x6D4C41, nullptr},
-  {"Messages", LV_SYMBOL_ENVELOPE, 0xD81B60, nullptr},       {"Storage",  LV_SYMBOL_DRIVE,     0x00ACC1, &STORAGE_APP},
+  {"Navigate", LV_SYMBOL_UP,       0xF4511E, &NAVIGATE_APP},  {"Places",   LV_SYMBOL_HOME,      0xD81B60, &PLACES_APP},
+  {"Drive",    LV_SYMBOL_CHARGE,   0x5E35B1, &DRIVE_APP},     {"Storage",  LV_SYMBOL_DRIVE,     0x00ACC1, &STORAGE_APP},
 };
 static_assert(sizeof(ENTRIES) / sizeof(ENTRIES[0]) == Apps::COUNT, "launcher has COUNT tiles");
 }

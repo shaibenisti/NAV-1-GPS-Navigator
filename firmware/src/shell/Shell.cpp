@@ -26,6 +26,11 @@
 #include "../services/Ota.h"
 #include "../services/Backlight.h"
 #include "../services/TimeService.h"
+#include "../services/Places.h"
+#include "../services/Navigator.h"
+#include "../services/Odometer.h"
+#include "../services/Geo.h"
+#include "../ui/UiText.h"
 #include "../apps/App.h"
 
 namespace {
@@ -325,15 +330,63 @@ void updateOtaOverlay() {
   lv_bar_set_value(s_otaBar, Ota::progress(), LV_ANIM_OFF);
 }
 
+// Short system message above every screen (navigation events), gone after TOAST_MS
+constexpr uint32_t TOAST_MS = 5000;
+lv_obj_t *s_toast = nullptr;
+uint32_t s_toastMs = 0;
+
+void showToast(const char *text, uint32_t color) {
+  if (!s_toast) {
+    s_toast = lv_label_create(lv_layer_top());
+    lv_obj_set_style_text_font(s_toast, &nav_he_20, 0);
+    lv_obj_set_style_text_color(s_toast, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(s_toast, LV_OPA_90, 0);
+    lv_obj_set_style_radius(s_toast, 14, 0);
+    lv_obj_set_style_pad_hor(s_toast, 18, 0);
+    lv_obj_set_style_pad_ver(s_toast, 12, 0);
+    lv_obj_set_style_text_align(s_toast, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(s_toast, Display::UI_W - 40);
+    lv_label_set_long_mode(s_toast, LV_LABEL_LONG_DOT);
+    lv_obj_align(s_toast, LV_ALIGN_TOP_MID, 0, STATUS_H + 8);
+    lv_obj_set_clickable(s_toast, false);
+  }
+  lv_obj_set_style_bg_color(s_toast, lv_color_hex(color), 0);
+  UiText::setName(s_toast, text);
+  lv_obj_set_hidden(s_toast, false);
+  s_toastMs = millis();
+  Serial.printf("[UI] toast: %s\n", text);
+}
+
+void updateToast() {
+  char t[96];
+  const Navigator::Event ev = Navigator::takeEvent();
+  if (ev != Navigator::Event::None) {
+    const Navigator::Status st = Navigator::status();
+    if (ev == Navigator::Event::Arrived) { snprintf(t, sizeof(t), LV_SYMBOL_OK "  Arrived: %s", st.name); showToast(t, 0x2E7D32); }
+    else if (ev == Navigator::Event::OffRoute) { snprintf(t, sizeof(t), LV_SYMBOL_WARNING "  Off the route (%.0f m)", st.offM); showToast(t, 0xC62828); }
+    else if (ev == Navigator::Event::BackOnRoute) showToast(LV_SYMBOL_OK "  Back on the route", 0x1565C0);
+  }
+  if (s_toast && !lv_obj_is_hidden(s_toast) && millis() - s_toastMs > TOAST_MS) lv_obj_set_hidden(s_toast, true);
+}
+
 void updateStatusBar() {
   updateOtaOverlay();
-  static char lastTime[16], lastGps[40], lastIcons[40];
+  updateToast();
+  static char lastTime[40], lastGps[40], lastIcons[40];
   char buf[40];
   const GpsData d = s_parser->snapshot(s_link->linkUp(GPS_LINK_TIMEOUT_MS));
 
   struct tm lt;
   if (TimeService::local(lt)) snprintf(buf, sizeof(buf), "%02d:%02d", lt.tm_hour, lt.tm_min);
   else snprintf(buf, sizeof(buf), "--:--");
+  if (Navigator::active()) {                                  // guidance: the distance next to the clock
+    const Navigator::Status st = Navigator::status();
+    char dist[16];
+    if (st.arrived) strcpy(dist, "here");
+    else Geo::formatDistance(st.distM, dist, sizeof(dist));
+    const size_t l = strlen(buf);
+    snprintf(buf + l, sizeof(buf) - l, "  " LV_SYMBOL_UP " %s", dist);
+  }
   if (strcmp(buf, lastTime)) { strcpy(lastTime, buf); lv_label_set_text(s_sbTime, buf); }
 
   if (!d.linkUp) snprintf(buf, sizeof(buf), LV_SYMBOL_GPS " no GPS");
@@ -513,6 +566,11 @@ void handleLine(const char *cmd) {
   } else if (strncmp(cmd, "map ", 4) == 0 && strncmp(cmd + 4, "trip ", 5) == 0) {       // map trip <base>: Trips > Show on map
     mapAppShowTrip(cmd + 9);
     if (lv_screen_active() == s_home) openApp(Apps::indexOf("Map")); else Shell::switchApp("Map");
+  } else if (strncmp(cmd, "map place ", 10) == 0) {   // map place <lat> <lon>: Places > Show on map
+    double lat = 0, lon = 0;
+    if (sscanf(cmd + 10, "%lf %lf", &lat, &lon) != 2) { Serial.println("[UI] usage: map place <lat> <lon>"); return; }
+    mapAppShowPlace(lat, lon);
+    if (lv_screen_active() == s_home) openApp(Apps::indexOf("Map")); else Shell::switchApp("Map");
   } else if (strncmp(cmd, "map ", 4) == 0) {
     mapAppCommand(cmd + 4);
   } else if (strcmp(cmd, "map") == 0) {
@@ -538,7 +596,8 @@ void handleLine(const char *cmd) {
     int page = 0;
     sscanf(cmd + 5, "%15s %d", name, &page);
     void (*setPage)(int) = !strcasecmp(name, "Settings") ? settingsAppSetPage : !strcasecmp(name, "Tools") ? toolsAppSetPage
-                         : !strcasecmp(name, "GPS") ? gpsAppSetPage : !strcasecmp(name, "Trips") ? tripsAppSetPage : nullptr;
+                         : !strcasecmp(name, "GPS") ? gpsAppSetPage : !strcasecmp(name, "Trips") ? tripsAppSetPage
+                         : !strcasecmp(name, "Places") ? placesAppOpen : nullptr;
     const int i = Apps::indexOf(name);
     if (!setPage || i < 0) { Serial.printf("[UI] no paged app '%s'\n", name); return; }
     setPage(page);
@@ -596,6 +655,9 @@ void updateServices() {
   TIMED("time", TimeService::update());
   TIMED("replay", GpsReplay::update());
   TIMED("trip", TripRecorder::update());
+  TIMED("places", Places::update());
+  TIMED("nav", Navigator::update());
+  TIMED("odometer", Odometer::update());
   TIMED("web", WebService::update());
   TIMED("ota", Ota::update());
   TIMED("ble", BleService::update());
@@ -687,6 +749,8 @@ void Shell::begin(GpsLink &link, GpsParser &parser, bool parserSelfTestOk) {
   Diag::setStatusIconsLabel(s_sbIcons);   // self-test: the Wi-Fi icon must be on screen when connected
   GpsReplay::begin(s_sd, link, parser);
   TripRecorder::begin(s_sd);              // resumes a trip interrupted by a reset
+  Places::begin(s_sd);                    // saved places (/data/places.json)
+  Navigator::begin();                     // resumes the guidance active before a reset
   WebService::begin(s_sd);                // starts serving once Wi-Fi is connected
   Ota::begin();                           // new firmware from an update: verify, else rollback
   ph[6] = millis();
